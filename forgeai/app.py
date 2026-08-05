@@ -1,5 +1,5 @@
 import sys
-from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget
 
 class WorkspaceManager:
     def __init__(self):
