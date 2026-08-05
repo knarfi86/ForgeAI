@@ -119,3 +119,7 @@ class WorkspaceManager:
             "SELECT relative_path, grant_type, created_at FROM ai_access_grants WHERE project_path=? ORDER BY created_at",
             (str(self.active_project),),
         )
+
+    def is_project_open(self) -> bool:
+        """Check if a project is currently open."""
+        return self.active_project is not None
