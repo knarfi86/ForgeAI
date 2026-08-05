@@ -1,0 +1,12 @@
+class WorkspaceManager:
+    def __init__(self):
+        # Initialisierung des Workspaces
+        self.workspace = {}
+    
+    def add_file(self, path, content):
+        # Fügt eine Datei zum Workspace hinzu
+        self.workspace[path] = content
+    
+    def get_file(self, path):
+        # Gibt den Inhalt einer Datei zurück
+        return self.workspace.get(path, None)
