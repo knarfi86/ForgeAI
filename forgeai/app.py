@@ -1,4 +1,5 @@
-from PySide6.QtWidgets import QMainWindow, QLabel, QVBoxLayout, QWidget
+import sys
+from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
 
 class ForgeAIApplication(QMainWindow):
     def __init__(self, app, workspace_manager=None):
@@ -11,15 +12,17 @@ class ForgeAIApplication(QMainWindow):
         layout = QVBoxLayout()
         
         if self.workspace_manager:
-            info_label = QLabel(self.workspace_manager.get_workspace_info())
-            layout.addWidget(info_label)
-            
-            file_list_label = QLabel(f"Files: {len(self.workspace_manager.list_project_files())}")
-            layout.addWidget(file_list_label)
+            # Hier könnte der Code für die Initialisierung des Workspaces stehen
+            pass
         
-        main_widget.setLayout(layout)
-        self.setCentralWidget(main_widget)
-    
+        self.status_bar = None
+
     def show(self):
-        # Anzeigen der Hauptanwendung
-        print("ForgeAI Application is running")
+        super().show()
+
+    def set_status_text(self, text):
+        if not self.status_bar:
+            self.status_bar = self.statusBar()
+        
+        if self.status_bar:
+            self.status_bar.showMessage(text)
