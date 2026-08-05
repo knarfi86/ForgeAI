@@ -1,4 +1,5 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QComboBox
+from PySide6.QtCore import Signal
 
 class ModelSelector(QWidget):
     model_selected = Signal(str)
