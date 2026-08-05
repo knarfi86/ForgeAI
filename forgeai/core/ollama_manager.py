@@ -5,6 +5,7 @@ import urllib.request
 from PySide6.QtCore import QThread, Signal
 
 from forgeai.ai.ollama_client import OllamaClient, OllamaStreamWorker
+from forgeai.config import Config
 
 
 class OllamaManager:
