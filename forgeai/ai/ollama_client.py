@@ -55,5 +55,12 @@ class OllamaClient:
         except (urllib.error.URLError, json.JSONDecodeError, ValueError):
             return []
 
+    def load_model(self, base_url: str, model_name: str) -> dict:
+        try:
+            with urllib.request.urlopen(f"{self.local_url(base_url)}/api/models/{model_name}", timeout=3) as response:
+                return json.load(response)
+        except (urllib.error.URLError, json.JSONDecodeError, ValueError):
+            return {}
+
     def stream_chat(self, base_url: str, model: str, messages: list[dict]) -> OllamaStreamWorker:
         return OllamaStreamWorker(base_url, model, messages)
