@@ -1,6 +1,21 @@
+import sys
+from PySide6.QtWidgets import QApplication, QMainWindow, QLabel
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("ForgeAI Desktop App")
+        self.setGeometry(100, 100, 800, 600)
+        
+        label = QLabel("Willkommen bei ForgeAI!", self)
+        label.setAlignment(Qt.AlignCenter)
+        self.setCentralWidget(label)
+
 def main():
-    print("ForgeAI Grundgerüst gestartet")
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
