@@ -10,3 +10,7 @@ class WorkspaceManager:
     def get_file(self, path):
         # Gibt den Inhalt einer Datei zurück
         return self.workspace.get(path, None)
+    
+    def is_workspace_open(self):
+        # Überprüft, ob der Workspace leer ist oder nicht
+        return bool(self.workspace)

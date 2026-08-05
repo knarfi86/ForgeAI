@@ -13,6 +13,10 @@ def main() -> int:
     # Initialisieren des WorkspaceManagers
     workspace_manager = WorkspaceManager()
     
+    if not workspace_manager.is_workspace_open():
+        print("No workspace is open. Please open a workspace first.")
+        return 1
+    
     application = ForgeAIApplication(app, workspace_manager)
     application.show()
     return app.exec()
