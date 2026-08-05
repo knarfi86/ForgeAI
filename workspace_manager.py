@@ -14,3 +14,13 @@ class WorkspaceManager:
     def is_workspace_open(self):
         # Überprüft, ob der Workspace leer ist oder nicht
         return bool(self.workspace)
+    
+    def get_workspace_info(self):
+        # Gibt Informationen über das geöffnete Projekt zurück
+        if not self.is_workspace_open():
+            return "No workspace is open."
+        
+        info = "Open Workspace:\n"
+        for path, content in self.workspace.items():
+            info += f"{path}:\n{content}\n\n"
+        return info

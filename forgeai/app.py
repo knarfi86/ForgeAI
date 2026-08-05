@@ -9,3 +9,7 @@ class ForgeAIApplication(QMainWindow):
     def show(self):
         # Anzeigen der Hauptanwendung
         print("ForgeAI Application is running")
+        
+        if self.workspace_manager:
+            workspace_info = self.workspace_manager.get_workspace_info()
+            print(workspace_info)
