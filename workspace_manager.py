@@ -24,3 +24,17 @@ class WorkspaceManager:
         for path, content in self.workspace.items():
             info += f"{path}:\n{content}\n\n"
         return info
+    
+    def list_project_files(self):
+        # Liste aller Dateien im Projekt
+        if not self.is_workspace_open():
+            return []
+        
+        return list(self.workspace.keys())
+    
+    def read_file(self, path):
+        # Liest den Inhalt einer Datei
+        if not self.is_workspace_open():
+            return None
+        
+        return self.get_file(path)
