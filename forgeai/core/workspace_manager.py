@@ -3,6 +3,7 @@
 import logging
 from pathlib import Path
 
+from forgeai.ai.ollama_client import OllamaClient  # Importiere OllamaClient hier
 from forgeai.core.file_indexer import FileIndexer
 from forgeai.core.forge_brain import ForgeBrain
 from forgeai.core.project_analyzer import ProjectAnalyzer
