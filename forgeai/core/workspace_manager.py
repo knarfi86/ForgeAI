@@ -18,6 +18,7 @@ class WorkspaceManager:
         self.indexer = indexer
         self.filesystem = indexer.filesystem
         self.active_project: Path | None = None
+        self.active_model: str | None = None  # Neues Attribut für das aktive Modell
         self.logger = logging.getLogger("forgeai.workspace")
         self.brain = ForgeBrain(database)
         self.analyzer = ProjectAnalyzer(database, indexer.filesystem)
@@ -39,6 +40,7 @@ class WorkspaceManager:
         if self.active_project:
             self.logger.info("Closed project %s", self.active_project)
         self.active_project = None
+        self.active_model = None  # Setze das aktive Modell auf None bei Schließen des Projekts
 
     def refresh_index(self) -> ProjectStatistics | None:
         return self.indexer.index(self.active_project) if self.active_project else None
@@ -123,3 +125,15 @@ class WorkspaceManager:
     def is_project_open(self) -> bool:
         """Check if a project is currently open."""
         return self.active_project is not None
+
+    def set_active_model(self, model: str) -> None:
+        """Set the active model for the current project."""
+        if self.active_project:
+            self.active_model = model
+            self.logger.info("Set active model to %s for project %s", model, self.active_project)
+        else:
+            raise ValueError("Kein Projekt geöffnet.")
+
+    def get_active_model(self) -> str | None:
+        """Get the active model for the current project."""
+        return self.active_model
