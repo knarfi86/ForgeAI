@@ -2,7 +2,9 @@ import json
 import urllib.error
 import urllib.request
 
-from forgeai.config import Config
+from PySide6.QtCore import QThread, Signal
+
+from forgeai.ai.ollama_client import OllamaClient, OllamaStreamWorker
 
 
 class OllamaManager:
