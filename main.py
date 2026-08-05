@@ -13,21 +13,8 @@ def main() -> int:
     # Initialisieren des WorkspaceManagers
     workspace_manager = WorkspaceManager()
     
-    if not workspace_manager.is_workspace_open():
-        message_box = QMessageBox()
-        message_box.setIcon(QMessageBox.Information)
-        message_box.setText("No workspace is open. Please open a workspace first.")
-        message_box.setWindowTitle("Workspace Not Open")
-        message_box.setStandardButtons(QMessageBox.Ok)
-        
-        if message_box.exec() == QMessageBox.Ok:
-            return 0
-    
     application = ForgeAIApplication(app, workspace_manager)
     application.show()
-    
-    # Setzen des StatusTexts
-    application.set_status_text("No project open")
     
     return app.exec()
 

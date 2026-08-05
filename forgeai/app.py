@@ -23,25 +23,18 @@ class ForgeAIApplication(QMainWindow):
         main_widget = QWidget()
         layout = QVBoxLayout()
         
-        if self.workspace_manager:
-            if not self.workspace_manager.is_workspace_open():
-                message_box = QMessageBox()
-                message_box.setIcon(QMessageBox.Information)
-                message_box.setText("No workspace is open. Please open a workspace first.")
-                message_box.setWindowTitle("Workspace Not Open")
-                message_box.setStandardButtons(QMessageBox.Ok)
-                
-                if message_box.exec() == QMessageBox.Ok:
-                    return
+        label = QLabel("Willkommen bei ForgeAI")
+        layout.addWidget(label)
         
-        self.status_bar = None
-
+        main_widget.setLayout(layout)
+        self.setCentralWidget(main_widget)
+    
     def show(self):
         super().show()
 
     def set_status_text(self, text):
-        if not self.status_bar:
-            self.status_bar = self.statusBar()
-        
-        if self.status_bar:
-            self.status_bar.showMessage(text)
+        pass
+    
+    def closeEvent(self, event):
+        # Ignoriere das Schließen des Fensters
+        event.ignore()
