@@ -3,8 +3,6 @@
 import logging
 from pathlib import Path
 
-from forgeai.ai.ollama_client import OllamaClient
-from forgeai.config import Config
 from forgeai.core.file_indexer import FileIndexer
 from forgeai.core.forge_brain import ForgeBrain
 from forgeai.core.project_analyzer import ProjectAnalyzer
@@ -121,13 +119,3 @@ class WorkspaceManager:
             "SELECT relative_path, grant_type, created_at FROM ai_access_grants WHERE project_path=? ORDER BY created_at",
             (str(self.active_project),),
         )
-
-    def load_ollama_model(self, model_name: str) -> dict:
-        if not self.active_project:
-            raise ValueError("Kein Projekt geöffnet.")
-        return OllamaClient().load_model(Config.LOCAL_OLLAMA_URL, model_name)
-
-    def list_ollama_models(self) -> list[str]:
-        if not self.active_project:
-            raise ValueError("Kein Projekt geöffnet.")
-        return OllamaClient().list_models(Config.LOCAL_OLLAMA_URL)

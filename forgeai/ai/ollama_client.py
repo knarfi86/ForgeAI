@@ -64,3 +64,14 @@ class OllamaClient:
 
     def stream_chat(self, base_url: str, model: str, messages: list[dict]) -> OllamaStreamWorker:
         return OllamaStreamWorker(base_url, model, messages)
+
+    def connect(self, base_url: str) -> None:
+        """Establish a connection to the Ollama backend."""
+        try:
+            response = urllib.request.urlopen(f"{self.local_url(base_url)}", timeout=3)
+            if response.getcode() == 200:
+                self.logger.info("Ollama-Verbindung erfolgreich hergestellt.")
+            else:
+                raise ConnectionError(f"Ungültige Antwort: {response.getcode()}")
+        except urllib.error.URLError as error:
+            self.logger.error(f"Fehler beim Herstellen der Ollama-Verbindung: {error}")
