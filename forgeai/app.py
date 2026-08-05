@@ -23,8 +23,9 @@ class ForgeAIApplication(QMainWindow):
         main_widget = QWidget()
         layout = QVBoxLayout()
         
-        label = QLabel("Willkommen bei ForgeAI")
-        layout.addWidget(label)
+        if not self.workspace_manager or not self.workspace_manager.is_workspace_open():
+            label = QLabel("Kein Projekt geöffnet")
+            layout.addWidget(label)
         
         main_widget.setLayout(layout)
         self.setCentralWidget(main_widget)
