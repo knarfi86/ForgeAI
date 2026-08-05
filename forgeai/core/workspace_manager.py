@@ -137,3 +137,8 @@ class WorkspaceManager:
     def get_active_model(self) -> str | None:
         """Get the active model for the current project."""
         return self.active_model
+
+    def analyze_with_ollama(self, base_url: str) -> dict:
+        if not self.active_project:
+            return {}
+        return OllamaClient(base_url).analyze_project(base_url, str(self.active_project))

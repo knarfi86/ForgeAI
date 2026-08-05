@@ -129,6 +129,8 @@ class MainWindow(QMainWindow):
         ai_menu.addAction("Modell wechseln", self.show_settings)
         ai_menu.addAction("Systemprompt", self.show_system_prompt)
         ai_menu.addAction("Kontext anzeigen", self.show_context)
+        ollama_menu = self.menuBar().addMenu("Ollama")
+        ollama_menu.addAction("Projekt analysieren mit Ollama", self.analyze_project_with_ollama)
 
     def _apply_theme(self) -> None:
         font_size = self._setting("font_size", "10")
@@ -257,6 +259,24 @@ class MainWindow(QMainWindow):
         if analysis["is_self_project"]:
             message += "\nForgeAI analysiert gerade seinen eigenen Quellcode."
         QMessageBox.information(self, "Projektanalyse", message)
+
+    def analyze_project_with_ollama(self) -> None:
+        if not self.workspace.active_project:
+            QMessageBox.information(self, "Ollama Projektanalyse", "Kein Projekt geöffnet.")
+            return
+        analysis = self.workspace.analyze_with_ollama(Config.LOCAL_OLLAMA_URL)
+        if not analysis:
+            QMessageBox.information(self, "Ollama Projektanalyse", "Analyse fehlgeschlagen.")
+            return
+        self._update_status(len(analysis["files"]), "analysiert mit Ollama")
+        message = (
+            f"{analysis['project_name']}: {len(analysis['files'])} Dateien, "
+            f"{len(analysis['modules'])} Python-Module, "
+            f"{sum(len(items) for items in analysis['classes'].values())} Klassen"
+        )
+        if analysis["is_self_project"]:
+            message += "\nForgeAI analysiert gerade seinen eigenen Quellcode."
+        QMessageBox.information(self, "Ollama Projektanalyse", message)
 
     def show_project_information(self) -> None:
         if not self.workspace.active_project:

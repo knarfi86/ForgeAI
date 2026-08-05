@@ -75,3 +75,10 @@ class OllamaClient:
                 raise ConnectionError(f"Ungültige Antwort: {response.getcode()}")
         except urllib.error.URLError as error:
             self.logger.error(f"Fehler beim Herstellen der Ollama-Verbindung: {error}")
+
+    def analyze_project(self, base_url: str, project_path: str) -> dict:
+        try:
+            with urllib.request.urlopen(f"{self.local_url(base_url)}/api/analyze?path={project_path}", timeout=30) as response:
+                return json.load(response)
+        except (urllib.error.URLError, json.JSONDecodeError, ValueError):
+            return {}
