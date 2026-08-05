@@ -6,10 +6,6 @@ class ForgeAIApplication(QMainWindow):
         self.app = app
         self.workspace_manager = workspace_manager
         
-        # Statusleiste
-        status_bar = self.statusBar()
-        status_bar.showMessage("No project open")
-        
         # Hauptansicht
         main_widget = QWidget()
         layout = QVBoxLayout()
@@ -20,8 +16,6 @@ class ForgeAIApplication(QMainWindow):
             
             file_list_label = QLabel(f"Files: {len(self.workspace_manager.list_project_files())}")
             layout.addWidget(file_list_label)
-            
-            status_bar.showMessage(f"Project: None, Files: {len(self.workspace_manager.list_project_files())}")
         
         main_widget.setLayout(layout)
         self.setCentralWidget(main_widget)

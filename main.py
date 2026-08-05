@@ -13,6 +13,10 @@ def main() -> int:
     # Initialisieren des WorkspaceManagers
     workspace_manager = WorkspaceManager()
     
+    # Anzeigen der Statusleiste
+    status_bar = QMainWindow().statusBar()
+    status_bar.showMessage("No project open")
+    
     if not workspace_manager.is_workspace_open():
         message_box = QMessageBox()
         message_box.setIcon(QMessageBox.Information)
