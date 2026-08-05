@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 
-from forgeai.ai.ollama_client import OllamaClient  # Importiere OllamaClient hier
+from forgeai.ai.ollama_manager import OllamaManager  # Importiere OllamaManager hier
 from forgeai.core.file_indexer import FileIndexer
 from forgeai.core.forge_brain import ForgeBrain
 from forgeai.core.project_analyzer import ProjectAnalyzer
@@ -142,4 +142,5 @@ class WorkspaceManager:
     def analyze_with_ollama(self, base_url: str) -> dict:
         if not self.active_project:
             return {}
-        return OllamaClient(base_url).analyze_project(base_url, str(self.active_project))
+        ollama_manager = OllamaManager(base_url)
+        return ollama_manager.analyze_project(base_url, str(self.active_project))

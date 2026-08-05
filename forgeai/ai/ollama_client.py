@@ -4,8 +4,6 @@ import urllib.request
 
 from PySide6.QtCore import QThread, Signal
 
-from forgeai.config import Config
-
 
 class OllamaStreamWorker(QThread):
     token_received = Signal(str)
@@ -14,7 +12,7 @@ class OllamaStreamWorker(QThread):
 
     def __init__(self, base_url: str, model: str, messages: list[dict]):
         super().__init__()
-        self.base_url = OllamaClient.local_url(base_url)
+        self.base_url = base_url
         self.model, self.messages = model, messages
 
     def run(self) -> None:
