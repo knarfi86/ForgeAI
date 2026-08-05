@@ -1,0 +1,25 @@
+# Aider
+.aider*
+.aider/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtuelle Umgebungen
+.venv/
+venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+
+# Betriebssystem
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+.aider*
