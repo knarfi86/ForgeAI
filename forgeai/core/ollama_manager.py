@@ -53,6 +53,13 @@ class OllamaManager:
         except urllib.error.URLError as error:
             print(f"Fehler beim Herstellen der Ollama-Verbindung: {error}")
 
+    def detect_model(self) -> str | None:
+        """Automatically detect the available model."""
+        models = self.list_models()
+        if models:
+            return models[0]
+        return None
+
 
 class OllamaStreamWorker(QThread):
     token_received = Signal(str)
