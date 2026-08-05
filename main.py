@@ -1,6 +1,6 @@
 import sys
 
-from PySide6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QPushButton, QMessageBox
 
 from forgeai.app import ForgeAIApplication
 from workspace_manager import WorkspaceManager
@@ -14,8 +14,14 @@ def main() -> int:
     workspace_manager = WorkspaceManager()
     
     if not workspace_manager.is_workspace_open():
-        print("No workspace is open. Please open a workspace first.")
-        return 1
+        message_box = QMessageBox()
+        message_box.setIcon(QMessageBox.Information)
+        message_box.setText("No workspace is open. Please open a workspace first.")
+        message_box.setWindowTitle("Workspace Not Open")
+        message_box.setStandardButtons(QMessageBox.Ok)
+        
+        if message_box.exec() == QMessageBox.Ok:
+            return 0
     
     application = ForgeAIApplication(app, workspace_manager)
     application.show()
