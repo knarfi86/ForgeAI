@@ -32,26 +32,45 @@ class CodeAgent:
         request: str,
         model: str | None = None,
     ) -> str:
-        """Analyze a file and create a change proposal."""
+        """
+        Analyze a file and create a change proposal.
+
+        The agent does not modify files directly.
+        """
 
         content = self.workspace_tools.read_file(file_path)
-
         context, _ = self.context_provider.build(project_path)
 
         prompt = f"""
-Du bist ein lokaler Coding-Agent.
+Du bist ein lokaler Coding-Agent innerhalb von ForgeAI.
 
 Regeln:
 - Du schreibst keine Dateien direkt.
-- Erstelle nur Vorschläge.
-- Nutze nur den vorhandenen Kontext.
+- Erstelle ausschließlich Analyse und Änderungsvorschläge.
+- Nutze nur den bereitgestellten Projektkontext.
+- Änderungen müssen später durch den Benutzer bestätigt werden.
 
 Projektkontext:
 {context}
 
-Datei:
+Zu analysierende Datei:
 {file_path}
+
+Benutzeranfrage:
+{request}
 
 Dateiinhalt:
 ```text
 {content}
+```
+"""
+
+        response = self.ollama.generate(
+            prompt=prompt,
+            model=model,
+        )
+
+        if response is None:
+            return "Ollama hat keine Antwort zurückgegeben."
+
+        return response
