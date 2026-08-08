@@ -360,7 +360,7 @@ class MainWindow(QMainWindow):
 
     def show_settings(self) -> None:
         settings = {row["key"]: row["value"] for row in self.database.fetchall("SELECT key, value FROM settings")}
-        dialog = SettingsDialog(self.ollama_url, self.model, self.ollama.list_models(self.ollama_url), settings, self)
+        dialog = SettingsDialog(self.ollama_url, self.model, settings, self)
         if dialog.exec():
             values = dialog.values()
             self.ollama_url, self.model = Config.LOCAL_OLLAMA_URL, values["model"]

@@ -4,6 +4,8 @@ import urllib.request
 
 from PySide6.QtCore import QThread, Signal
 
+from forgeai.config import Config
+
 
 class OllamaStreamWorker(QThread):
     token_received = Signal(str)
@@ -62,6 +64,39 @@ class OllamaClient:
 
     def stream_chat(self, base_url: str, model: str, messages: list[dict]) -> OllamaStreamWorker:
         return OllamaStreamWorker(base_url, model, messages)
+
+    def generate(
+        self,
+        prompt: str,
+        model: str | None = None,
+        base_url: str | None = None,
+    ) -> str:
+        if not model:
+            raise ValueError("Kein Ollama-Modell angegeben.")
+
+        target_url = base_url if base_url is not None else Config.LOCAL_OLLAMA_URL
+        request = urllib.request.Request(
+            f"{self.local_url(target_url)}/api/chat",
+            data=json.dumps(
+                {
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": False,
+                }
+            ).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=300) as response:
+                data = json.load(response)
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+            raise RuntimeError(
+                f"Ollama-Verbindung fehlgeschlagen: {error}"
+            ) from error
+
+        return data.get("message", {}).get("content", "").strip()
 
     def connect(self, base_url: str) -> None:
         """Establish a connection to the Ollama backend."""
