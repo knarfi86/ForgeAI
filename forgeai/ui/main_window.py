@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from forgeai.ai.change_actions import extract_change_previews
 from forgeai.ai.ollama_client import OllamaClient
 from forgeai.ai.prompts import SYSTEM_PROMPT
 from forgeai.config import Config
@@ -20,6 +21,7 @@ from forgeai.core.models import ProjectMode
 from forgeai.core.task_manager import TaskManager
 from forgeai.core.workspace_database import WorkspaceDatabase
 from forgeai.core.workspace_manager import WorkspaceManager
+from forgeai.core.workspace_tools import ChangePreview, WorkspaceTools
 from forgeai.ui.chat_view import ChatView
 from forgeai.ui.file_viewer import FileViewer
 from forgeai.ui.input_bar import InputBar
@@ -192,7 +194,7 @@ class MainWindow(QMainWindow):
             self.history.title_chat(self.chat_id, text[:42])
         self.chat_view.add_message("user", text)
         self.chat_view.add_message("assistant", "")
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages = [{"role": "system", "content": SYSTEM_PROMPT + self._change_action_instructions()}]
         context, included_files = self.ai_context.build(self.workspace.active_project)
         if context:
             messages.append({"role": "system", "content": context})
@@ -208,10 +210,73 @@ class MainWindow(QMainWindow):
 
     def _response_done(self) -> None:
         content = self.chat_view.pending.content if self.chat_view.pending else ""
+        content = self._apply_model_changes(content)
+        if self.chat_view.pending:
+            self.chat_view.pending.set_content(content)
         if content and self.chat_id is not None:
             self.history.add_message(self.chat_id, "assistant", content)
         self.input_bar.set_busy(False)
         self.refresh_chats()
+
+    def _change_action_instructions(self) -> str:
+        if not self.workspace.active_project or self.workspace.project_mode() not in {
+            ProjectMode.WRITE_WITH_CONFIRMATION, ProjectMode.AUTO_WRITE,
+        }:
+            return "\n\nDu darfst keine Dateien verändern; liefere nur Erklärungen oder Vorschläge."
+        return """
+
+Du darfst Dateien im geöffneten Projekt ändern, aber ausschließlich über markierte Aktionen.
+Gib zusätzlich eine kurze Erklärung für den Benutzer aus und danach je Änderung genau einen Block:
+```forgeai-action
+{"operation":"replace","path":"relativer/pfad.py","old":"exakter bisheriger Text","new":"neuer Text"}
+```
+oder für neue Dateien:
+```forgeai-action
+{"operation":"create","path":"relativer/pfad.py","content":"Dateiinhalt"}
+```
+Nutze nur Dateien oder Verzeichnisse, die der Benutzer für die KI freigegeben hat. Verwende niemals absolute Pfade,
+keine Aktionen zum Löschen oder Umbenennen und keine Aktionen außerhalb dieser Blöcke.
+"""
+
+    def _apply_model_changes(self, response: str) -> str:
+        """Validate, preview and apply model-requested project changes."""
+        project = self.workspace.active_project
+        if not project or self.workspace.project_mode() not in {
+            ProjectMode.WRITE_WITH_CONFIRMATION, ProjectMode.AUTO_WRITE,
+        }:
+            return response
+        visible, previews, errors = extract_change_previews(
+            response, WorkspaceTools(project, self.workspace.filesystem)
+        )
+        applied = 0
+        for preview in previews:
+            if not self.workspace.is_ai_path_granted(preview.path):
+                errors.append(f"Keine KI-Freigabe für {preview.path.relative_to(project)}.")
+                continue
+            if self.workspace.project_mode() == ProjectMode.WRITE_WITH_CONFIRMATION and not self._confirm_change(preview):
+                continue
+            try:
+                WorkspaceTools(project, self.workspace.filesystem).apply(preview, confirmed=True)
+                applied += 1
+            except (OSError, PermissionError) as error:
+                errors.append(str(error))
+        if applied:
+            self.refresh_index()
+            visible += f"\n\n*{applied} Dateiänderung(en) wurden angewendet.*"
+        if errors:
+            visible += "\n\n**Dateiänderung nicht angewendet:** " + " | ".join(errors)
+        return visible
+
+    def _confirm_change(self, preview: ChangePreview) -> bool:
+        relative = preview.path.relative_to(self.workspace.active_project) if self.workspace.active_project else preview.path
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("KI-Dateiänderung bestätigen")
+        dialog.setIcon(QMessageBox.Icon.Question)
+        dialog.setText(f"Soll die KI diese Änderung in {relative} anwenden?")
+        dialog.setDetailedText(preview.diff or "Die Datei wird erstellt.")
+        dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QMessageBox.StandardButton.No)
+        return dialog.exec() == QMessageBox.StandardButton.Yes
 
     def _response_failed(self, error: str) -> None:
         self.logger.error("Ollama request failed: %s", error)

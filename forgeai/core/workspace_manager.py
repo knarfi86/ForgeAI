@@ -123,6 +123,22 @@ class WorkspaceManager:
             (str(self.active_project),),
         )
 
+    def is_ai_path_granted(self, path: str | Path) -> bool:
+        """Check a file or a path inside a granted directory is available to the AI."""
+        if not self.active_project:
+            return False
+        target = self.filesystem.resolve(path)
+        if target != self.active_project and self.active_project not in target.parents:
+            return False
+        relative = target.relative_to(self.active_project).as_posix()
+        for grant in self.ai_grants():
+            granted = grant["relative_path"]
+            if grant["grant_type"] == "file" and relative == granted:
+                return True
+            if grant["grant_type"] == "directory" and (granted == "." or relative == granted or relative.startswith(f"{granted}/")):
+                return True
+        return False
+
     def is_project_open(self) -> bool:
         """Check if a project is currently open."""
         return self.active_project is not None

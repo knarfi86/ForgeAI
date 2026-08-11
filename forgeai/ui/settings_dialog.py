@@ -46,7 +46,7 @@ class SettingsDialog(QDialog):
 
         # Projektmodus
         self.project_mode = QComboBox()
-        self.project_mode.addItems(["READ_ONLY", "PROPOSE", "WRITE_WITH_CONFIRMATION"])
+        self.project_mode.addItems(["READ_ONLY", "PROPOSE", "WRITE_WITH_CONFIRMATION", "AUTO_WRITE"])
         self.project_mode.setCurrentText(settings.get("project_mode", "READ_ONLY"))
         layout.addRow("Projektmodus", self.project_mode)
 
