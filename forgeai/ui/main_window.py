@@ -78,6 +78,8 @@ class MainWindow(QMainWindow):
         self.project_panel.file_open_requested.connect(self.open_file)
         self.project_panel.ai_access_grant_requested.connect(self.grant_ai_access)
         self.project_panel.ai_access_revoke_requested.connect(self.revoke_ai_access)
+        self.project_panel.ai_access_grant_many_requested.connect(self.grant_ai_access_many)
+        self.project_panel.ai_access_revoke_many_requested.connect(self.revoke_ai_access_many)
         center_split = QSplitter(Qt.Orientation.Vertical)
         center_split.addWidget(self.chat_view)
         center_split.addWidget(self.file_viewer)
@@ -210,13 +212,15 @@ class MainWindow(QMainWindow):
 
     def _response_done(self) -> None:
         content = self.chat_view.pending.content if self.chat_view.pending else ""
-        content = self._apply_model_changes(content)
+        content, previews = self._prepare_model_changes(content)
         if self.chat_view.pending:
             self.chat_view.pending.set_content(content)
         if content and self.chat_id is not None:
             self.history.add_message(self.chat_id, "assistant", content)
         self.input_bar.set_busy(False)
         self.refresh_chats()
+        if previews:
+            self.chat_view.add_change_proposal(previews, lambda: self._apply_change_previews(previews))
 
     def _change_action_instructions(self) -> str:
         if not self.workspace.active_project or self.workspace.project_mode() not in {
@@ -225,58 +229,75 @@ class MainWindow(QMainWindow):
             return "\n\nDu darfst keine Dateien verändern; liefere nur Erklärungen oder Vorschläge."
         return """
 
-Du darfst Dateien im geöffneten Projekt ändern, aber ausschließlich über markierte Aktionen.
-Gib zusätzlich eine kurze Erklärung für den Benutzer aus und danach je Änderung genau einen Block:
+WICHTIG: Wenn eine Datei erstellt oder geändert werden soll, MUSST du mindestens eine
+`forgeai-action` ausgeben. Erklärung oder Beispielcode allein reicht nicht und wird
+nicht ausgeführt. Gib niemals Python-Code oder andere Dateischreiboperationen aus.
+
+Erlaubt sind ausschließlich diese Aktionen, jeweils in einem eigenen Block:
 ```forgeai-action
-{"operation":"replace","path":"relativer/pfad.py","old":"exakter bisheriger Text","new":"neuer Text"}
+{"operation":"create","path":"datei.txt","content":"Inhalt"}
 ```
-oder für neue Dateien:
 ```forgeai-action
-{"operation":"create","path":"relativer/pfad.py","content":"Dateiinhalt"}
+{"operation":"replace","path":"datei.py","old":"alter Text","new":"neuer Text"}
 ```
-Nutze nur Dateien oder Verzeichnisse, die der Benutzer für die KI freigegeben hat. Verwende niemals absolute Pfade,
-keine Aktionen zum Löschen oder Umbenennen und keine Aktionen außerhalb dieser Blöcke.
+
+Regeln:
+- Nur `create` und `replace`.
+- Nur relative Pfade innerhalb des geöffneten Projekts; niemals absolute Pfade.
+- Kein Löschen und kein Umbenennen.
+- Gib keine pathlib-, open(), write_text(), shutil-, os- oder sonstigen
+  Dateischreiboperationen aus.
+- Bei mehreren Änderungen gib für jede Änderung eine eigene `forgeai-action` aus.
+- Nutze nur Dateien oder Verzeichnisse, die der Benutzer für die KI freigegeben hat.
 """
 
-    def _apply_model_changes(self, response: str) -> str:
-        """Validate, preview and apply model-requested project changes."""
+    def _prepare_model_changes(self, response: str) -> tuple[str, list[ChangePreview]]:
+        """Turn model actions into validated previews without writing any files."""
         project = self.workspace.active_project
         if not project or self.workspace.project_mode() not in {
             ProjectMode.WRITE_WITH_CONFIRMATION, ProjectMode.AUTO_WRITE,
         }:
-            return response
+            return response, []
         visible, previews, errors = extract_change_previews(
             response, WorkspaceTools(project, self.workspace.filesystem)
         )
-        applied = 0
+        permitted_previews: list[ChangePreview] = []
         for preview in previews:
             if not self.workspace.is_ai_path_granted(preview.path):
                 errors.append(f"Keine KI-Freigabe für {preview.path.relative_to(project)}.")
                 continue
-            if self.workspace.project_mode() == ProjectMode.WRITE_WITH_CONFIRMATION and not self._confirm_change(preview):
+            permitted_previews.append(preview)
+        if self.workspace.project_mode() == ProjectMode.AUTO_WRITE and permitted_previews:
+            success, message = self._apply_change_previews(permitted_previews)
+            visible += f"\n\n*{message}*"
+            if success:
+                permitted_previews = []
+        if errors:
+            visible += "\n\n**Dateiänderung nicht vorbereitet:** " + " | ".join(errors)
+        return visible, permitted_previews
+
+    def _apply_change_previews(self, previews: list[ChangePreview]) -> tuple[bool, str]:
+        """Apply user-approved previews through the existing WorkspaceTools gateway."""
+        project = self.workspace.active_project
+        if not project:
+            return False, "Kein Projekt geöffnet."
+        applied = 0
+        errors: list[str] = []
+        tools = WorkspaceTools(project, self.workspace.filesystem)
+        for preview in previews:
+            if not self.workspace.is_ai_path_granted(preview.path):
+                errors.append(f"Keine KI-Freigabe für {preview.path.relative_to(project)}.")
                 continue
             try:
-                WorkspaceTools(project, self.workspace.filesystem).apply(preview, confirmed=True)
+                tools.apply(preview, confirmed=True)
                 applied += 1
             except (OSError, PermissionError) as error:
                 errors.append(str(error))
         if applied:
             self.refresh_index()
-            visible += f"\n\n*{applied} Dateiänderung(en) wurden angewendet.*"
         if errors:
-            visible += "\n\n**Dateiänderung nicht angewendet:** " + " | ".join(errors)
-        return visible
-
-    def _confirm_change(self, preview: ChangePreview) -> bool:
-        relative = preview.path.relative_to(self.workspace.active_project) if self.workspace.active_project else preview.path
-        dialog = QMessageBox(self)
-        dialog.setWindowTitle("KI-Dateiänderung bestätigen")
-        dialog.setIcon(QMessageBox.Icon.Question)
-        dialog.setText(f"Soll die KI diese Änderung in {relative} anwenden?")
-        dialog.setDetailedText(preview.diff or "Die Datei wird erstellt.")
-        dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        dialog.setDefaultButton(QMessageBox.StandardButton.No)
-        return dialog.exec() == QMessageBox.StandardButton.Yes
+            return False, f"{applied} Änderung(en) angewendet; Fehler: {' | '.join(errors)}"
+        return True, f"{applied} Dateiänderung(en) wurden angewendet."
 
     def _response_failed(self, error: str) -> None:
         self.logger.error("Ollama request failed: %s", error)
@@ -378,6 +399,23 @@ keine Aktionen zum Löschen oder Umbenennen und keine Aktionen außerhalb dieser
 
     def revoke_ai_access(self, path: str) -> None:
         self.workspace.revoke_ai_access(path)
+        self._update_status()
+
+    def grant_ai_access_many(self, paths: list[str]) -> None:
+        answer = QMessageBox.question(
+            self, "KI-Freigabe",
+            f"{len(paths)} Dateien für die lokale KI freigeben? Die Inhalte werden nur an Ollama auf diesem Computer übergeben.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            for path in paths:
+                self.workspace.grant_ai_access(path)
+            self._update_status()
+
+    def revoke_ai_access_many(self, paths: list[str]) -> None:
+        for path in paths:
+            self.workspace.revoke_ai_access(path)
         self._update_status()
 
     def populate_recent_projects(self) -> None:

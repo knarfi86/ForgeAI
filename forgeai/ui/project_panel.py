@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QItemSelectionModel, Qt, Signal
 from PySide6.QtWidgets import (
     QFileDialog, QFileSystemModel, QHBoxLayout, QLabel, QMenu, QPushButton,
     QTreeView, QVBoxLayout, QWidget,
@@ -19,6 +19,8 @@ class ProjectPanel(QWidget):
     file_open_requested = Signal(str)
     ai_access_grant_requested = Signal(str)
     ai_access_revoke_requested = Signal(str)
+    ai_access_grant_many_requested = Signal(list)
+    ai_access_revoke_many_requested = Signal(list)
 
     def __init__(self):
         super().__init__()
@@ -36,11 +38,15 @@ class ProjectPanel(QWidget):
         self.refresh_button = QPushButton("Aktualisieren")
         self.open_button.clicked.connect(self.open_project)
         self.refresh_button.clicked.connect(self.refresh_requested)
+        self.select_all_button = QPushButton("Alle auswählen")
+        self.select_all_button.clicked.connect(self.select_all_files)
         heading.addWidget(self.project_name, 1)
         heading.addWidget(self.open_button)
         heading.addWidget(self.refresh_button)
+        heading.addWidget(self.select_all_button)
         self.tree = QTreeView()
         self.tree.setModel(self.model)
+        self.tree.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
         self.model.setHeaderData(0, Qt.Orientation.Horizontal, "Name")
         self.model.setHeaderData(1, Qt.Orientation.Horizontal, "Größe")
         self.model.setHeaderData(2, Qt.Orientation.Horizontal, "Dateityp")
@@ -66,6 +72,13 @@ class ProjectPanel(QWidget):
         index = self.tree.indexAt(position)
         if not index.isValid():
             return
+        selection = self.tree.selectionModel()
+        if not selection.isSelected(index):
+            selection.select(
+                index,
+                QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows,
+            )
+        paths = [self.model.filePath(selected) for selected in selection.selectedRows()]
         path = self.model.filePath(index)
         menu = QMenu(self)
         open_action = menu.addAction("Öffnen")
@@ -74,6 +87,9 @@ class ProjectPanel(QWidget):
         menu.addSeparator()
         grant_action = menu.addAction("Für KI freigeben")
         revoke_action = menu.addAction("KI-Freigabe entfernen")
+        suffix = "Dateien" if len(paths) > 1 else "Datei"
+        grant_action.setText(f"{len(paths)} {suffix} für KI freigeben")
+        revoke_action.setText(f"KI-Freigabe für {len(paths)} {suffix} entfernen")
         action = menu.exec(self.tree.viewport().mapToGlobal(position))
         if action == open_action:
             self._open_path(path)
@@ -82,9 +98,30 @@ class ProjectPanel(QWidget):
         elif action == explorer_action:
             self.filesystem.show_in_explorer(path)
         elif action == grant_action:
-            self.ai_access_grant_requested.emit(path)
+            if len(paths) == 1:
+                self.ai_access_grant_requested.emit(path)
+            else:
+                self.ai_access_grant_many_requested.emit(paths)
         elif action == revoke_action:
-            self.ai_access_revoke_requested.emit(path)
+            if len(paths) == 1:
+                self.ai_access_revoke_requested.emit(path)
+            else:
+                self.ai_access_revoke_many_requested.emit(paths)
+
+    def select_all_files(self) -> None:
+        """Select every project file for one shared context-menu operation."""
+        if not self.project_path:
+            return
+        selection = self.tree.selectionModel()
+        selection.clearSelection()
+        for directory, _, names in self.filesystem.walk(self.project_path, set()):
+            for name in names:
+                index = self.model.index(str(directory / name))
+                if index.isValid():
+                    selection.select(
+                        index,
+                        QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows,
+                    )
 
     def _open_index(self, index) -> None:
         self._open_path(self.model.filePath(index))

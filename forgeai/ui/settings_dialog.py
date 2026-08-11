@@ -59,7 +59,7 @@ class SettingsDialog(QDialog):
     def values(self):
         return {
             "ollama_url": self.url.text().strip(),
-            "model": self.model_selector.currentText() if self.model_selector else "",
+            "model": self.model_selector.model_combo.currentText() if self.model_selector else "",
             "theme": self.theme.currentText(),
             "font_size": str(self.font_size.value()),
             "auto_save": str(self.auto_save.isChecked()).lower(),

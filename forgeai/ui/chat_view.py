@@ -1,5 +1,7 @@
 from PySide6.QtWidgets import QScrollArea, QVBoxLayout, QWidget
 
+from forgeai.core.workspace_tools import ChangePreview
+from forgeai.ui.change_proposal import ChangeProposal
 from forgeai.widgets.markdown_view import MarkdownView
 
 
@@ -25,6 +27,12 @@ class ChatView(QScrollArea):
     def append_stream(self, text: str) -> None:
         if self.pending:
             self.pending.set_content(self.pending.content + text); self._scroll_bottom()
+
+    def add_change_proposal(self, previews: list[ChangePreview], apply_changes) -> None:
+        proposal = ChangeProposal(previews, apply_changes)
+        proposal.setObjectName("assistantMessage")
+        self.layout.insertWidget(self.layout.count() - 1, proposal)
+        self._scroll_bottom()
 
     def _scroll_bottom(self):
         bar = self.verticalScrollBar(); bar.setValue(bar.maximum())

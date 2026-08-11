@@ -54,11 +54,19 @@ class AIContextProvider:
         seen: set[Path] = set()
         for row in rows:
             target = self._inside_root(root, row["relative_path"])
-            candidates = [target] if row["grant_type"] == "file" else [
-                directory / name
-                for directory, _, names in self.filesystem.walk(target, FileIndexer.IGNORED_DIRECTORIES)
-                for name in names
-            ]
+            if row["grant_type"] == "file":
+                candidates = [target] if self.filesystem.is_file(target) else []
+            elif not self.filesystem.is_directory(target):
+                candidates = []
+            else:
+                try:
+                    candidates = [
+                        directory / name
+                        for directory, _, names in self.filesystem.walk(target, FileIndexer.IGNORED_DIRECTORIES)
+                        for name in names
+                    ]
+                except FileNotFoundError:
+                    candidates = []
             for candidate in candidates:
                 if self.filesystem.is_file(candidate) and candidate not in seen:
                     seen.add(candidate)
