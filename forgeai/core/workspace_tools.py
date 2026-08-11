@@ -19,6 +19,8 @@ class ChangePreview:
 
     @property
     def diff(self) -> str:
+        if self.operation == "create_directory":
+            return f"Neuer Ordner: {self.path}\n"
         source_name = str(self.path)
         target_name = str(self.destination or self.path)
         return "".join(difflib.unified_diff(
@@ -55,9 +57,15 @@ class WorkspaceTools:
 
     def create_file(self, path: str | Path, content: str = "") -> ChangePreview:
         target = self._path(path)
-        if self.filesystem.is_file(target):
+        if self.filesystem.is_file(target) or self.filesystem.is_directory(target):
             raise FileExistsError(target)
         return ChangePreview("create", target, "", content)
+
+    def create_directory(self, path: str | Path) -> ChangePreview:
+        target = self._path(path)
+        if self.filesystem.is_file(target) or self.filesystem.is_directory(target):
+            raise FileExistsError(target)
+        return ChangePreview("create_directory", target, "", "")
 
     def rename_file(self, path: str | Path, destination: str | Path) -> ChangePreview:
         target = self._path(path)
@@ -71,6 +79,8 @@ class WorkspaceTools:
     def apply(self, preview: ChangePreview, *, confirmed: bool = False) -> None:
         if preview.operation in {"replace", "create"}:
             self.filesystem.write_text(preview.path, preview.after, confirmed=confirmed)
+        elif preview.operation == "create_directory":
+            self.filesystem.create_directory(preview.path, confirmed=confirmed)
         elif preview.operation == "rename" and preview.destination:
             self.filesystem.move_file(preview.path, preview.destination, confirmed=confirmed)
         elif preview.operation == "delete":

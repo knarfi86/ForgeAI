@@ -35,6 +35,15 @@ from forgeai.ui.terminal_panel import TerminalPanel
 class MainWindow(QMainWindow):
     """Coordinates UI components while services retain workspace state."""
 
+    AI_CONTROL_FILES = {
+        "forgeai/ai/change_actions.py",
+        "forgeai/core/filesystem.py",
+        "forgeai/core/workspace_tools.py",
+        "forgeai/ui/change_proposal.py",
+        "forgeai/ui/chat_view.py",
+        "forgeai/ui/main_window.py",
+    }
+
     def __init__(self, database: WorkspaceDatabase):
         super().__init__()
         self.database = database
@@ -46,6 +55,8 @@ class MainWindow(QMainWindow):
         self.ollama = OllamaClient()
         self.worker = None
         self.chat_id: int | None = None
+        self._pending_user_request = ""
+        self._action_retry_active = False
         self.ollama_url = Config.LOCAL_OLLAMA_URL
         self._save_setting("ollama_url", self.ollama_url)
         self.model = self._setting("model", Config.DEFAULT_MODEL)
@@ -192,6 +203,8 @@ class MainWindow(QMainWindow):
         if self.worker and self.worker.isRunning() or self.chat_id is None:
             return
         self.history.add_message(self.chat_id, "user", text)
+        self._pending_user_request = text
+        self._action_retry_active = False
         if len(self.history.messages(self.chat_id)) == 1:
             self.history.title_chat(self.chat_id, text[:42])
         self.chat_view.add_message("user", text)
@@ -202,7 +215,9 @@ class MainWindow(QMainWindow):
             messages.append({"role": "system", "content": context})
             self.logger.info("Sent %s approved local files to Ollama", len(included_files))
         messages += [{"role": row["role"], "content": row["content"]} for row in self.history.messages(self.chat_id)]
-        self.worker = self.ollama.stream_chat(self.ollama_url, self.model, messages)
+        self.worker = self.ollama.stream_chat(
+            self.ollama_url, self.model, messages, self._action_response_format(text)
+        )
         self.worker.token_received.connect(self.chat_view.append_stream)
         self.worker.completed.connect(self._response_done)
         self.worker.failed.connect(self._response_failed)
@@ -211,8 +226,11 @@ class MainWindow(QMainWindow):
         self.refresh_chats()
 
     def _response_done(self) -> None:
-        content = self.chat_view.pending.content if self.chat_view.pending else ""
-        content, previews = self._prepare_model_changes(content)
+        raw_content = self.chat_view.pending.content if self.chat_view.pending else ""
+        content, previews = self._prepare_model_changes(raw_content)
+        if self._should_retry_for_actions(raw_content, previews):
+            self._retry_for_actions(content)
+            return
         if self.chat_view.pending:
             self.chat_view.pending.set_content(content)
         if content and self.chat_id is not None:
@@ -221,6 +239,79 @@ class MainWindow(QMainWindow):
         self.refresh_chats()
         if previews:
             self.chat_view.add_change_proposal(previews, lambda: self._apply_change_previews(previews))
+
+    def _should_retry_for_actions(self, response: str, previews: list[ChangePreview]) -> bool:
+        """Retry once when a requested change was answered with instructions only."""
+        if self._action_retry_active or previews or "```forgeai-action" in response.casefold():
+            return False
+        if not self.workspace.active_project or self.workspace.project_mode() not in {
+            ProjectMode.WRITE_WITH_CONFIRMATION, ProjectMode.AUTO_WRITE,
+        }:
+            return False
+        if self.workspace.project_mode() == ProjectMode.AUTO_WRITE:
+            return False
+        request = self._pending_user_request.casefold()
+        change_verbs = ("erstelle", "erstell", "anlegen", "anlege", "ändere", "aendere", "bearbeite", "füge", "fuege", "verbessere", "implementiere")
+        return any(verb in request for verb in change_verbs)
+
+    def _retry_for_actions(self, instruction_response: str) -> None:
+        """Ask the local model to convert an instruction-only answer into executable actions."""
+        self._action_retry_active = True
+        if self.chat_view.pending:
+            self.chat_view.pending.set_content("")
+        messages = [{"role": "system", "content": SYSTEM_PROMPT + self._change_action_instructions()}]
+        context, _ = self.ai_context.build(self.workspace.active_project)
+        if context:
+            messages.append({"role": "system", "content": context})
+        messages.append({
+            "role": "user",
+            "content": (
+                "Die vorherige Antwort war nur eine Anleitung und kann nicht ausgeführt werden. "
+                "Setze die ursprüngliche Aufgabe jetzt selbst um. Antworte ausschließlich mit einem oder mehreren "
+                "gültigen `forgeai-action`-Blöcken, ohne Erklärung, Python-Code, Shell-Befehle oder Markdown außerhalb "
+                "der Blöcke.\n\nUrsprüngliche Aufgabe:\n"
+                f"{self._pending_user_request}\n\nVorherige, nicht ausführbare Antwort:\n{instruction_response}"
+            ),
+        })
+        self.worker = self.ollama.stream_chat(
+            self.ollama_url, self.model, messages, self._action_response_format(self._pending_user_request)
+        )
+        self.worker.token_received.connect(self.chat_view.append_stream)
+        self.worker.completed.connect(self._response_done)
+        self.worker.failed.connect(self._response_failed)
+        self.worker.start()
+
+    def _action_response_format(self, request: str) -> dict | None:
+        """Force structured local-model output for requests that change project files."""
+        if not self.workspace.active_project or self.workspace.project_mode() not in {
+            ProjectMode.WRITE_WITH_CONFIRMATION, ProjectMode.AUTO_WRITE,
+        }:
+            return None
+        request = request.casefold()
+        change_verbs = ("erstelle", "erstell", "anlegen", "anlege", "ändere", "aendere", "bearbeite", "füge", "fuege", "verbessere", "implementiere")
+        if not any(verb in request for verb in change_verbs):
+            return None
+        return {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "operation": {"type": "string", "enum": ["create", "create_directory", "replace"]},
+                            "path": {"type": "string"},
+                            "content": {"type": "string"},
+                            "old": {"type": "string"},
+                            "new": {"type": "string"},
+                        },
+                        "required": ["operation", "path"],
+                    },
+                },
+            },
+            "required": ["actions"],
+        }
 
     def _change_action_instructions(self) -> str:
         if not self.workspace.active_project or self.workspace.project_mode() not in {
@@ -238,15 +329,20 @@ Erlaubt sind ausschließlich diese Aktionen, jeweils in einem eigenen Block:
 {"operation":"create","path":"datei.txt","content":"Inhalt"}
 ```
 ```forgeai-action
+{"operation":"create_directory","path":"neuer-ordner"}
+```
+```forgeai-action
 {"operation":"replace","path":"datei.py","old":"alter Text","new":"neuer Text"}
 ```
 
 Regeln:
-- Nur `create` und `replace`.
+- Nur `create`, `create_directory` und `replace`.
 - Nur relative Pfade innerhalb des geöffneten Projekts; niemals absolute Pfade.
 - Kein Löschen und kein Umbenennen.
 - Gib keine pathlib-, open(), write_text(), shutil-, os- oder sonstigen
   Dateischreiboperationen aus.
+- Bei einer Ordner-Erstellung verwende zwingend `create_directory`; gib niemals
+  mkdir, os.makedirs() oder eine Anleitung dafür aus.
 - Bei mehreren Änderungen gib für jede Änderung eine eigene `forgeai-action` aus.
 - Nutze nur Dateien oder Verzeichnisse, die der Benutzer für die KI freigegeben hat.
 """
@@ -263,6 +359,9 @@ Regeln:
         )
         permitted_previews: list[ChangePreview] = []
         for preview in previews:
+            if self._is_ai_control_file(preview.path):
+                errors.append(f"Die KI-Schreibfunktion selbst darf nicht verändert werden: {preview.path.name}.")
+                continue
             if not self.workspace.is_ai_path_granted(preview.path):
                 errors.append(f"Keine KI-Freigabe für {preview.path.relative_to(project)}.")
                 continue
@@ -285,6 +384,9 @@ Regeln:
         errors: list[str] = []
         tools = WorkspaceTools(project, self.workspace.filesystem)
         for preview in previews:
+            if self._is_ai_control_file(preview.path):
+                errors.append(f"Die KI-Schreibfunktion selbst darf nicht verändert werden: {preview.path.name}.")
+                continue
             if not self.workspace.is_ai_path_granted(preview.path):
                 errors.append(f"Keine KI-Freigabe für {preview.path.relative_to(project)}.")
                 continue
@@ -298,6 +400,11 @@ Regeln:
         if errors:
             return False, f"{applied} Änderung(en) angewendet; Fehler: {' | '.join(errors)}"
         return True, f"{applied} Dateiänderung(en) wurden angewendet."
+
+    @classmethod
+    def _is_ai_control_file(cls, path: Path) -> bool:
+        source_root = Path(__file__).resolve().parents[2]
+        return path.resolve() in {source_root / relative for relative in cls.AI_CONTROL_FILES}
 
     def _response_failed(self, error: str) -> None:
         self.logger.error("Ollama request failed: %s", error)
@@ -317,6 +424,8 @@ Regeln:
             self.logger.warning("Project could not be opened: %s", error)
             QMessageBox.warning(self, "Projekt öffnen", str(error))
             return
+        if self.workspace.ai_grants() and self.workspace.project_mode() == ProjectMode.READ_ONLY:
+            self.workspace.set_project_mode(ProjectMode.WRITE_WITH_CONFIRMATION)
         self.project_panel.set_project(path)
         self.terminal.set_working_directory(path)
         self._update_status(statistics.file_count, "indexiert")
@@ -395,6 +504,8 @@ Regeln:
         )
         if answer == QMessageBox.StandardButton.Yes:
             self.workspace.grant_ai_access(path)
+            if self.workspace.project_mode() == ProjectMode.READ_ONLY:
+                self.workspace.set_project_mode(ProjectMode.WRITE_WITH_CONFIRMATION)
             self._update_status()
 
     def revoke_ai_access(self, path: str) -> None:
@@ -411,6 +522,8 @@ Regeln:
         if answer == QMessageBox.StandardButton.Yes:
             for path in paths:
                 self.workspace.grant_ai_access(path)
+            if self.workspace.project_mode() == ProjectMode.READ_ONLY:
+                self.workspace.set_project_mode(ProjectMode.WRITE_WITH_CONFIRMATION)
             self._update_status()
 
     def revoke_ai_access_many(self, paths: list[str]) -> None:
@@ -463,6 +576,8 @@ Regeln:
 
     def show_settings(self) -> None:
         settings = {row["key"]: row["value"] for row in self.database.fetchall("SELECT key, value FROM settings")}
+        if self.workspace.active_project:
+            settings["project_mode"] = self.workspace.project_mode().value
         dialog = SettingsDialog(self.ollama_url, self.model, settings, self)
         if dialog.exec():
             values = dialog.values()

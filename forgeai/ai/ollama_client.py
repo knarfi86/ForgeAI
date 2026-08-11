@@ -12,15 +12,19 @@ class OllamaStreamWorker(QThread):
     completed = Signal()
     failed = Signal(str)
 
-    def __init__(self, base_url: str, model: str, messages: list[dict]):
+    def __init__(self, base_url: str, model: str, messages: list[dict], response_format: dict | str | None = None):
         super().__init__()
         self.base_url = base_url
         self.model, self.messages = model, messages
+        self.response_format = response_format
 
     def run(self) -> None:
+        payload = {"model": self.model, "messages": self.messages, "stream": True}
+        if self.response_format is not None:
+            payload["format"] = self.response_format
         request = urllib.request.Request(
             f"{self.base_url}/api/chat",
-            data=json.dumps({"model": self.model, "messages": self.messages, "stream": True}).encode(),
+            data=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json"}, method="POST",
         )
         try:
@@ -62,8 +66,10 @@ class OllamaClient:
         except (urllib.error.URLError, json.JSONDecodeError, ValueError):
             return {}
 
-    def stream_chat(self, base_url: str, model: str, messages: list[dict]) -> OllamaStreamWorker:
-        return OllamaStreamWorker(base_url, model, messages)
+    def stream_chat(
+        self, base_url: str, model: str, messages: list[dict], response_format: dict | str | None = None,
+    ) -> OllamaStreamWorker:
+        return OllamaStreamWorker(base_url, model, messages, response_format)
 
     def generate(
         self,

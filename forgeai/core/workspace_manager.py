@@ -30,6 +30,7 @@ class WorkspaceManager:
             raise ValueError(f"Ungültiger Projektordner: {project}")
         self.database.upsert_project(str(project), project.name)
         self.active_project = project
+        self._inherit_parent_ai_grants(project)
         statistics = self.indexer.index(project)
         if self.analyzer.is_self_project(project):
             self.brain.save_analysis(self.analyzer.analyze(project))
@@ -122,6 +123,32 @@ class WorkspaceManager:
             "SELECT relative_path, grant_type, created_at FROM ai_access_grants WHERE project_path=? ORDER BY created_at",
             (str(self.active_project),),
         )
+
+    def _inherit_parent_ai_grants(self, project: Path) -> None:
+        """Reuse explicit parent-project grants when that project is opened as a workspace."""
+        rows = self.database.fetchall(
+            "SELECT project_path, relative_path, grant_type FROM ai_access_grants WHERE project_path != ?",
+            (str(project),),
+        )
+        for row in rows:
+            source_root = self.filesystem.resolve(row["project_path"])
+            target = self.filesystem.resolve(source_root / row["relative_path"])
+            if row["grant_type"] == "file" and project in target.parents:
+                relative = target.relative_to(project).as_posix()
+                grant_type = "file"
+            elif row["grant_type"] == "directory" and (target == project or target in project.parents):
+                relative = "."
+                grant_type = "directory"
+            elif row["grant_type"] == "directory" and project in target.parents:
+                relative = target.relative_to(project).as_posix()
+                grant_type = "directory"
+            else:
+                continue
+            self.database.execute(
+                "INSERT INTO ai_access_grants(project_path,relative_path,grant_type) VALUES(?,?,?) "
+                "ON CONFLICT(project_path,relative_path) DO UPDATE SET grant_type=excluded.grant_type",
+                (str(project), relative, grant_type),
+            )
 
     def is_ai_path_granted(self, path: str | Path) -> bool:
         """Check a file or a path inside a granted directory is available to the AI."""
