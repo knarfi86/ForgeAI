@@ -8,6 +8,7 @@ from forgeai.core.forge_brain import ForgeBrain
 from forgeai.core.project_analyzer import ProjectAnalyzer
 from forgeai.core.models import ProjectMode, ProjectStatistics
 from forgeai.core.workspace_database import WorkspaceDatabase
+from forgeai.core.models import ProjectMode, ProjectStatistics
 
 
 class WorkspaceManager:
