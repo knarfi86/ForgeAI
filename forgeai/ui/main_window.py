@@ -284,13 +284,29 @@ class MainWindow(QMainWindow):
     def _action_response_format(self, request: str) -> dict | None:
         """Force structured local-model output for requests that change project files."""
         if not self.workspace.active_project or self.workspace.project_mode() not in {
-            ProjectMode.WRITE_WITH_CONFIRMATION, ProjectMode.AUTO_WRITE,
+            ProjectMode.WRITE_WITH_CONFIRMATION,
+            ProjectMode.AUTO_WRITE,
         }:
             return None
+
         request = request.casefold()
-        change_verbs = ("erstelle", "erstell", "anlegen", "anlege", "ändere", "aendere", "bearbeite", "füge", "fuege", "verbessere", "implementiere")
+        change_verbs = (
+            "erstelle",
+            "erstell",
+            "anlegen",
+            "anlege",
+            "ändere",
+            "aendere",
+            "bearbeite",
+            "füge",
+            "fuege",
+            "verbessere",
+            "implementiere",
+        )
+
         if not any(verb in request for verb in change_verbs):
             return None
+
         return {
             "type": "object",
             "properties": {
@@ -298,19 +314,76 @@ class MainWindow(QMainWindow):
                     "type": "array",
                     "minItems": 1,
                     "items": {
-                        "type": "object",
-                        "properties": {
-                            "operation": {"type": "string", "enum": ["create", "create_directory", "replace"]},
-                            "path": {"type": "string"},
-                            "content": {"type": "string"},
-                            "old": {"type": "string"},
-                            "new": {"type": "string"},
-                        },
-                        "required": ["operation", "path"],
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "operation": {
+                                        "type": "string",
+                                        "const": "create",
+                                    },
+                                    "path": {
+                                        "type": "string",
+                                    },
+                                    "content": {
+                                        "type": "string",
+                                    },
+                                },
+                                "required": [
+                                    "operation",
+                                    "path",
+                                    "content",
+                                ],
+                                "additionalProperties": False,
+                            },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "operation": {
+                                        "type": "string",
+                                        "const": "create_directory",
+                                    },
+                                    "path": {
+                                        "type": "string",
+                                    },
+                                },
+                                "required": [
+                                    "operation",
+                                    "path",
+                                ],
+                                "additionalProperties": False,
+                            },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "operation": {
+                                        "type": "string",
+                                        "const": "replace",
+                                    },
+                                    "path": {
+                                        "type": "string",
+                                    },
+                                    "old": {
+                                        "type": "string",
+                                    },
+                                    "new": {
+                                        "type": "string",
+                                    },
+                                },
+                                "required": [
+                                    "operation",
+                                    "path",
+                                    "old",
+                                    "new",
+                                ],
+                                "additionalProperties": False,
+                            },
+                        ]
                     },
-                },
+                }
             },
             "required": ["actions"],
+            "additionalProperties": False,
         }
 
     def _change_action_instructions(self) -> str:
