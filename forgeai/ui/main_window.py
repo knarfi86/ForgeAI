@@ -503,6 +503,12 @@ Regeln:
             QMessageBox.StandardButton.No,
         )
         if answer == QMessageBox.StandardButton.Yes:
+            # DEBUG: Temporarily output path and active_project before grant
+            print(f"[DEBUG grant_ai_access] path={path}")
+            print(f"[DEBUG grant_ai_access] active_project={self.workspace.active_project}")
+            self.logger.info("[DEBUG grant_ai_access] path=%s", path)
+            self.logger.info("[DEBUG grant_ai_access] active_project=%s", self.workspace.active_project)
+            
             self.workspace.grant_ai_access(path)
             if self.workspace.project_mode() == ProjectMode.READ_ONLY:
                 self.workspace.set_project_mode(ProjectMode.WRITE_WITH_CONFIRMATION)
