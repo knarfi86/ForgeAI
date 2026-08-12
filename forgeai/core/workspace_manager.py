@@ -151,19 +151,70 @@ class WorkspaceManager:
             )
 
     def is_ai_path_granted(self, path: str | Path) -> bool:
-        """Check a file or a path inside a granted directory is available to the AI."""
+        """Check a file or a path inside a granted directory is available to the AI.
+        
+        For non-existent files (e.g., during CREATE operations), checks if the parent
+        directory (or any ancestor) is a granted directory.
+        """
         if not self.active_project:
             return False
+        
+        # Resolve the path to an absolute path without checking if it exists
         target = self.filesystem.resolve(path)
+        
+        # Security: ensure path is within active project
         if target != self.active_project and self.active_project not in target.parents:
             return False
+        
+        # Get relative path for grant checking
         relative = target.relative_to(self.active_project).as_posix()
+        
+        # Check grants
         for grant in self.ai_grants():
             granted = grant["relative_path"]
-            if grant["grant_type"] == "file" and relative == granted:
-                return True
-            if grant["grant_type"] == "directory" and (granted == "." or relative == granted or relative.startswith(f"{granted}/")):
-                return True
+            grant_type = grant["grant_type"]
+            
+            # File grants: exact match only (for existing files)
+            if grant_type == "file":
+                if relative == granted:
+                    return True
+            
+            # Directory grants: also match children and non-existent paths within the directory
+            elif grant_type == "directory":
+                # Root grant matches everything within project
+                if granted == ".":
+                    return True
+                
+                # Exact directory match
+                if relative == granted:
+                    return True
+                
+                # Child of directory (existing or non-existent)
+                if relative.startswith(f"{granted}/"):
+                    return True
+        
+        # For non-existent files/directories, check if parent directory is granted
+        if not self.filesystem.is_file(target) and not self.filesystem.is_directory(target):
+            parent_parts = Path(relative).parts[:-1]
+            if parent_parts:
+                parent_relative = "/".join(parent_parts)
+                for grant in self.ai_grants():
+                    granted = grant["relative_path"]
+                    grant_type = grant["grant_type"]
+                    
+                    if grant_type == "directory":
+                        # Parent directory is granted
+                        if parent_relative == granted:
+                            return True
+                        # Parent directory is within a granted directory
+                        if parent_relative.startswith(f"{granted}/"):
+                            return True
+            else:
+                # File in root - root must be granted as directory
+                for grant in self.ai_grants():
+                    if grant["grant_type"] == "directory" and grant["relative_path"] == ".":
+                        return True
+        
         return False
 
     def is_project_open(self) -> bool:
