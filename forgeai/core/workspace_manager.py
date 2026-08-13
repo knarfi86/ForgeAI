@@ -23,6 +23,7 @@ class WorkspaceManager:
         self.logger = logging.getLogger("forgeai.workspace")
         self.brain = ForgeBrain(database)
         self.analyzer = ProjectAnalyzer(database, indexer.filesystem)
+        self._session_grants: set[Path] = set()  # Temporary grants for this session
 
     def open_project(self, path: str | Path) -> ProjectStatistics:
         project = self.filesystem.resolve(path)
@@ -43,6 +44,7 @@ class WorkspaceManager:
             self.logger.info("Closed project %s", self.active_project)
         self.active_project = None
         self.active_model = None  # Setze das aktive Modell auf None bei Schließen des Projekts
+        self._session_grants.clear()  # Clear session grants
 
     def refresh_index(self) -> ProjectStatistics | None:
         return self.indexer.index(self.active_project) if self.active_project else None
@@ -124,6 +126,16 @@ class WorkspaceManager:
             (str(self.active_project),),
         )
 
+    def grant_session_access(self, path: str | Path) -> None:
+        """Grant temporary access for this session only (until project closes)."""
+        if not self.active_project:
+            return
+        target = self.filesystem.resolve(path)
+        if target != self.active_project and self.active_project not in target.parents:
+            return
+        self._session_grants.add(target)
+        self.logger.debug("Granted temporary session access to %s", target)
+
     def _inherit_parent_ai_grants(self, project: Path) -> None:
         """Reuse explicit parent-project grants when that project is opened as a workspace."""
         rows = self.database.fetchall(
@@ -153,6 +165,7 @@ class WorkspaceManager:
     def is_ai_path_granted(self, path: str | Path) -> bool:
         """Check a file or a path inside a granted directory is available to the AI.
         
+        Includes both persistent grants and temporary session grants.
         For non-existent files (e.g., during CREATE operations), checks if the parent
         directory (or any ancestor) is a granted directory.
         """
@@ -166,10 +179,18 @@ class WorkspaceManager:
         if target != self.active_project and self.active_project not in target.parents:
             return False
         
+        # Check session grants first (temporary)
+        if target in self._session_grants:
+            return True
+        # Also check if target is within a session-granted directory
+        for session_grant in self._session_grants:
+            if target == session_grant or session_grant in target.parents:
+                return True
+        
         # Get relative path for grant checking
         relative = target.relative_to(self.active_project).as_posix()
         
-        # Check grants
+        # Check persistent grants
         for grant in self.ai_grants():
             granted = grant["relative_path"]
             grant_type = grant["grant_type"]
