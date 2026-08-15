@@ -1,4 +1,4 @@
-"""Translate explicitly marked model actions into safe workspace previews."""
+﻿"""Translate explicitly marked model actions into safe workspace previews."""
 
 import json
 import re
@@ -64,12 +64,12 @@ def extract_change_previews(
             }:
                 raise ValueError(
                     "Nur 'create', 'create_directory' und 'replace' "
-                    "sind für KI-Änderungen erlaubt."
+                    "sind fÃ¼r KI-Ã„nderungen erlaubt."
                 )
 
             if not isinstance(path, str) or not path.strip():
                 raise ValueError(
-                    "Jede forgeai-action benötigt einen gültigen "
+                    "Jede forgeai-action benÃ¶tigt einen gÃ¼ltigen "
                     "relativen Pfad."
                 )
 
@@ -130,7 +130,7 @@ def extract_change_previews(
             TypeError,
             ValueError,
             json.JSONDecodeError,
-            FileExistsError,
+            FileExistsError, OSError,
         ) as error:
             errors.append(str(error))
 

@@ -211,6 +211,7 @@ class MainWindow(QMainWindow):
         self.chat_view.add_message("assistant", "")
         messages = [{"role": "system", "content": SYSTEM_PROMPT + self._change_action_instructions()}]
         context, included_files = self.ai_context.build(self.workspace.active_project)
+        self.logger.info("Approved files sent to Ollama: %s", included_files)
         if context:
             messages.append({"role": "system", "content": context})
             self.logger.info("Sent %s approved local files to Ollama", len(included_files))
@@ -298,15 +299,35 @@ class MainWindow(QMainWindow):
                     "type": "array",
                     "minItems": 1,
                     "items": {
-                        "type": "object",
-                        "properties": {
-                            "operation": {"type": "string", "enum": ["create", "create_directory", "replace"]},
-                            "path": {"type": "string"},
-                            "content": {"type": "string"},
-                            "old": {"type": "string"},
-                            "new": {"type": "string"},
-                        },
-                        "required": ["operation", "path"],
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "operation": {"type": "string", "enum": ["create"]},
+                                    "path": {"type": "string"},
+                                    "content": {"type": "string"},
+                                },
+                                "required": ["operation", "path", "content"],
+                            },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "operation": {"type": "string", "enum": ["create_directory"]},
+                                    "path": {"type": "string"},
+                                },
+                                "required": ["operation", "path"],
+                            },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "operation": {"type": "string", "enum": ["replace"]},
+                                    "path": {"type": "string"},
+                                    "old": {"type": "string"},
+                                    "new": {"type": "string"},
+                                },
+                                "required": ["operation", "path", "old", "new"],
+                            },
+                        ],
                     },
                 },
             },
