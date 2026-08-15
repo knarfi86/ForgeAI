@@ -387,10 +387,11 @@ Regeln:
             if self._is_ai_control_file(preview.path):
                 errors.append(f"Die KI-Schreibfunktion selbst darf nicht verändert werden: {preview.path.name}.")
                 continue
-            if not self.workspace.is_ai_path_granted(preview.path):
-                errors.append(f"Keine KI-Freigabe für {preview.path.relative_to(project)}.")
-                continue
             try:
+                self.workspace.grant_session_access(preview.path)
+                if not self.workspace.is_ai_path_granted(preview.path):
+                    errors.append(f"Keine KI-Freigabe für {preview.path.relative_to(project)}.")
+                    continue
                 tools.apply(preview, confirmed=True)
                 applied += 1
             except (OSError, PermissionError) as error:
