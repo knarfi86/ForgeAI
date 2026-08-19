@@ -383,9 +383,6 @@ Regeln:
             if self._is_ai_control_file(preview.path):
                 errors.append(f"Die KI-Schreibfunktion selbst darf nicht verändert werden: {preview.path.name}.")
                 continue
-            if not self.workspace.is_ai_path_granted(preview.path):
-                errors.append(f"Keine KI-Freigabe für {preview.path.relative_to(project)}.")
-                continue
             permitted_previews.append(preview)
         if self.workspace.project_mode() == ProjectMode.AUTO_WRITE and permitted_previews:
             success, message = self._apply_change_previews(permitted_previews)
