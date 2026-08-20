@@ -56,7 +56,7 @@ class MainWindow(QMainWindow):
         self.worker = None
         self.chat_id: int | None = None
         self._pending_user_request = ""
-        self._action_retry_active = False
+        self._stream_is_action = False
         self.ollama_url = Config.LOCAL_OLLAMA_URL
         self._save_setting("ollama_url", self.ollama_url)
         self.model = self._setting("model", Config.DEFAULT_MODEL)
@@ -204,7 +204,7 @@ class MainWindow(QMainWindow):
             return
         self.history.add_message(self.chat_id, "user", text)
         self._pending_user_request = text
-        self._action_retry_active = False
+        self._stream_is_action = self._action_response_format(text) is not None
         if len(self.history.messages(self.chat_id)) == 1:
             self.history.title_chat(self.chat_id, text[:42])
         self.chat_view.add_message("user", text)
@@ -216,10 +216,14 @@ class MainWindow(QMainWindow):
             messages.append({"role": "system", "content": context})
             self.logger.info("Sent %s approved local files to Ollama", len(included_files))
         messages += [{"role": row["role"], "content": row["content"]} for row in self.history.messages(self.chat_id)]
+        response_format = self._action_response_format(text)
+
         self.worker = self.ollama.stream_chat(
-            self.ollama_url, self.model, messages, self._action_response_format(text)
+            self.ollama_url, self.model, messages, response_format
         )
-        self.worker.token_received.connect(self.chat_view.append_stream)
+
+        if not self._stream_is_action:
+            self.worker.token_received.connect(self.chat_view.append_stream)
         self.worker.completed.connect(self._response_done)
         self.worker.failed.connect(self._response_failed)
         self.input_bar.set_busy(True)
@@ -227,60 +231,33 @@ class MainWindow(QMainWindow):
         self.refresh_chats()
 
     def _response_done(self) -> None:
-        raw_content = self.chat_view.pending.content if self.chat_view.pending else ""
-        content, previews = self._prepare_model_changes(raw_content)
-        if self._should_retry_for_actions(raw_content, previews):
-            self._retry_for_actions(content)
+        if not self.worker:
+            self._response_failed("Keine Ollama-Antwort erhalten.")
             return
+
+        if self._stream_is_action:
+            raw_content = self.worker.content
+        else:
+            raw_content = self.chat_view.pending.content if self.chat_view.pending else ""
+
+        content, previews = self._prepare_model_changes(raw_content)
+
         if self.chat_view.pending:
             self.chat_view.pending.set_content(content)
+
         if content and self.chat_id is not None:
             self.history.add_message(self.chat_id, "assistant", content)
+
         self.input_bar.set_busy(False)
         self.refresh_chats()
+
         if previews:
-            self.chat_view.add_change_proposal(previews, lambda: self._apply_change_previews(previews))
+            self.chat_view.add_change_proposal(
+                previews,
+                lambda: self._apply_change_previews(previews),
+            )
 
-    def _should_retry_for_actions(self, response: str, previews: list[ChangePreview]) -> bool:
-        """Retry once when a requested change was answered with instructions only."""
-        if self._action_retry_active or previews or "```forgeai-action" in response.casefold():
-            return False
-        if not self.workspace.active_project or self.workspace.project_mode() not in {
-            ProjectMode.WRITE_WITH_CONFIRMATION, ProjectMode.AUTO_WRITE,
-        }:
-            return False
-        if self.workspace.project_mode() == ProjectMode.AUTO_WRITE:
-            return False
-        request = self._pending_user_request.casefold()
-        change_verbs = ("erstelle", "erstell", "anlegen", "anlege", "ändere", "aendere", "bearbeite", "füge", "fuege", "verbessere", "implementiere")
-        return any(verb in request for verb in change_verbs)
-
-    def _retry_for_actions(self, instruction_response: str) -> None:
-        """Ask the local model to convert an instruction-only answer into executable actions."""
-        self._action_retry_active = True
-        if self.chat_view.pending:
-            self.chat_view.pending.set_content("")
-        messages = [{"role": "system", "content": SYSTEM_PROMPT + self._change_action_instructions()}]
-        context, _ = self.ai_context.build(self.workspace.active_project)
-        if context:
-            messages.append({"role": "system", "content": context})
-        messages.append({
-            "role": "user",
-            "content": (
-                "Die vorherige Antwort war nur eine Anleitung und kann nicht ausgeführt werden. "
-                "Setze die ursprüngliche Aufgabe jetzt selbst um. Antworte ausschließlich mit einem oder mehreren "
-                "gültigen `forgeai-action`-Blöcken, ohne Erklärung, Python-Code, Shell-Befehle oder Markdown außerhalb "
-                "der Blöcke.\n\nUrsprüngliche Aufgabe:\n"
-                f"{self._pending_user_request}\n\nVorherige, nicht ausführbare Antwort:\n{instruction_response}"
-            ),
-        })
-        self.worker = self.ollama.stream_chat(
-            self.ollama_url, self.model, messages, self._action_response_format(self._pending_user_request)
-        )
-        self.worker.token_received.connect(self.chat_view.append_stream)
-        self.worker.completed.connect(self._response_done)
-        self.worker.failed.connect(self._response_failed)
-        self.worker.start()
+        self._stream_is_action = False
 
     def _action_response_format(self, request: str) -> dict | None:
         """Force structured local-model output for requests that change project files."""

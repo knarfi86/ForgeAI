@@ -17,23 +17,31 @@ class OllamaStreamWorker(QThread):
         self.base_url = base_url
         self.model, self.messages = model, messages
         self.response_format = response_format
+        self.content = ""
 
     def run(self) -> None:
         payload = {"model": self.model, "messages": self.messages, "stream": True}
         if self.response_format is not None:
             payload["format"] = self.response_format
+
         request = urllib.request.Request(
             f"{self.base_url}/api/chat",
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"}, method="POST",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
+
         try:
             with urllib.request.urlopen(request, timeout=300) as response:
                 for raw_line in response:
                     item = json.loads(raw_line)
-                    if content := item.get("message", {}).get("content"):
+                    content = item.get("message", {}).get("content", "")
+                    if content:
+                        self.content += content
                         self.token_received.emit(content)
+
             self.completed.emit()
+
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
             self.failed.emit(f"Ollama-Verbindung fehlgeschlagen: {error}")
 
