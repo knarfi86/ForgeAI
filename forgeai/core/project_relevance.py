@@ -1,4 +1,4 @@
-﻿"""Deterministic project-file relevance ranking for local agent research."""
+"""Deterministic project-file relevance ranking for local agent research."""
 
 from pathlib import Path
 import json
@@ -6,18 +6,18 @@ import re
 
 
 class ProjectRelevance:
-    """Ranks indexed project files against a user request without using AI."""
+    """Ranks indexed project files using stored structural project analysis."""
 
     MAX_RESULTS = 8
 
     STOP_WORDS = {
         "aber", "alle", "als", "auch", "auf", "aus", "bei", "damit",
         "dass", "der", "die", "dies", "diese", "dieser", "ein", "eine",
-        "einer", "einem", "einen", "für", "gegen", "hat", "haben",
+        "einer", "einem", "einen", "f?r", "gegen", "hat", "haben",
         "hier", "ich", "im", "in", "ist", "kann", "mit", "nach", "nicht",
         "nur", "oder", "sich", "sie", "sind", "und", "von", "war", "warum",
-        "wie", "wird", "zu", "zum", "zur", "zusammen", "richtig", "damit",
-        "lesen", "forge", "funktioniert",
+        "wie", "wird", "zu", "zum", "zur", "zusammen", "richtig",
+        "lesen", "forge", "funktioniert", "warum", "wieso",
     }
 
     def __init__(self, database, filesystem):
@@ -33,8 +33,11 @@ class ProjectRelevance:
         """Return the most relevant project files for a request."""
         root = self.filesystem.resolve(project_path)
         limit = max_results or self.MAX_RESULTS
-        terms = self._terms(request)
 
+        if limit <= 0:
+            return []
+
+        terms = self._terms(request)
         if not terms:
             return []
 
@@ -45,31 +48,35 @@ class ProjectRelevance:
         )
 
         analysis = self._load_analysis(root)
+        if not analysis:
+            return self._fallback_path_search(records, terms, limit)
+
+        classes = analysis.get("classes", {})
         imports = analysis.get("imports", {})
+        modules = analysis.get("modules", [])
         dependency_graph = analysis.get("dependency_graph", {})
+
+        module_by_path = {
+            relative_path: self._module_name(relative_path)
+            for relative_path in (record["relative_path"] for record in records)
+        }
 
         scored: list[tuple[int, str]] = []
 
         for record in records:
             relative_path = record["relative_path"]
-            path_score = self._score_path(relative_path, terms)
+            module = module_by_path[relative_path]
 
-            import_score = 0
-            dependency_score = 0
-
-            if relative_path in imports:
-                import_score = self._score_imports(imports[relative_path], terms)
-
-            module = self._module_name(relative_path)
-
-            if module in dependency_graph:
-                dependency_score = self._score_imports(
-                    dependency_graph[module],
-                    terms,
-                )
-
-            relationship_score = max(import_score, dependency_score)
-            score = path_score + relationship_score
+            score = 0
+            score += self._score_path(relative_path, terms)
+            score += self._score_classes(classes.get(relative_path, []), terms)
+            score += self._score_module(module, modules, terms)
+            score += self._score_imports(imports.get(relative_path, []), terms)
+            score += self._score_dependencies(
+                module,
+                dependency_graph,
+                terms,
+            )
 
             if score > 0:
                 scored.append((score, relative_path))
@@ -87,33 +94,42 @@ class ProjectRelevance:
             return {}
 
         try:
-            return json.loads(row["analysis_json"])
+            analysis = json.loads(row["analysis_json"])
         except (TypeError, ValueError):
             return {}
+
+        return analysis if isinstance(analysis, dict) else {}
+
+    def _fallback_path_search(self, records, terms: list[str], limit: int) -> list[str]:
+        """Keep relevance useful if structural analysis is temporarily unavailable."""
+        scored = []
+
+        for record in records:
+            relative_path = record["relative_path"]
+            score = self._score_path(relative_path, terms)
+
+            if score > 0:
+                scored.append((score, relative_path))
+
+        scored.sort(key=lambda item: (-item[0], item[1].casefold()))
+        return [relative_path for _, relative_path in scored[:limit]]
 
     @classmethod
     def _terms(cls, request: str) -> list[str]:
         normalized = request.casefold()
 
-        separators = (
-            ".", ",", ":", ";", "!", "?", "(", ")", "[", "]",
-            "{", "}", "/", "\\", '"', "'", "`", "\n", "\r", "\t",
-        )
+        normalized = re.sub(r"[^\w]+", " ", normalized, flags=re.UNICODE)
 
-        for separator in separators:
-            normalized = normalized.replace(separator, " ")
+        terms = {
+            term
+            for term in normalized.split()
+            if len(term) >= 3 and term not in cls.STOP_WORDS
+        }
 
-        return sorted(
-            {
-                term
-                for term in normalized.split()
-                if len(term) >= 3 and term not in cls.STOP_WORDS
-            },
-            key=lambda term: (-len(term), term),
-        )
+        return sorted(terms, key=lambda term: (-len(term), term))
 
-    @classmethod
-    def _score_path(cls, relative_path: str, terms: list[str]) -> int:
+    @staticmethod
+    def _score_path(relative_path: str, terms: list[str]) -> int:
         path = relative_path.casefold()
         filename = Path(relative_path).name.casefold()
         stem = Path(relative_path).stem.casefold()
@@ -122,35 +138,68 @@ class ProjectRelevance:
 
         for term in terms:
             if term == filename:
-                score += 100
+                score += 120
             elif term == stem:
-                score += 90
+                score += 110
             elif term in filename:
-                score += 25
+                score += 35
             elif term in path:
-                score += 5
-
-        for class_name in cls._class_like_terms(terms):
-            normalized_class = re.sub(r"[^a-z0-9]", "", class_name.casefold())
-            normalized_stem = re.sub(r"[^a-z0-9]", "", stem)
-
-            if normalized_class == normalized_stem:
-                score += 80
+                score += 8
 
         return score
 
     @staticmethod
-    def _class_like_terms(terms: list[str]) -> list[str]:
-        result = []
+    def _score_classes(classes: list[str], terms: list[str]) -> int:
+        if not isinstance(classes, list):
+            return 0
+
+        score = 0
+
+        for class_name in classes:
+            value = str(class_name).casefold()
+            normalized_value = re.sub(r"[^\w]+", "", value, flags=re.UNICODE)
+
+            for term in terms:
+                normalized_term = re.sub(
+                    r"[^\w]+",
+                    "",
+                    term.casefold(),
+                    flags=re.UNICODE,
+                )
+
+                if not normalized_term:
+                    continue
+
+                if normalized_value == normalized_term:
+                    score += 130
+                elif normalized_term in normalized_value:
+                    score += 40
+
+        return score
+
+    @staticmethod
+    def _score_module(
+        module: str,
+        modules: list[str],
+        terms: list[str],
+    ) -> int:
+        if not isinstance(modules, list):
+            return 0
+
+        value = str(module).casefold()
+        parts = set(value.split("."))
+
+        score = 0
 
         for term in terms:
-            if "_" in term:
-                parts = term.split("_")
+            if term == value:
+                score += 100
+            elif term in parts:
+                score += 45
+            elif term in value:
+                score += 15
 
-                if all(parts):
-                    result.append("".join(part.capitalize() for part in parts))
-
-        return result
+        return score
 
     @staticmethod
     def _score_imports(imports: list[str], terms: list[str]) -> int:
@@ -161,12 +210,45 @@ class ProjectRelevance:
 
         for imported in imports:
             value = str(imported).casefold()
+            parts = set(value.lstrip(".").split("."))
 
             for term in terms:
                 if term == value:
-                    score += 8
+                    score += 30
+                elif term in parts:
+                    score += 18
                 elif term in value:
-                    score += 3
+                    score += 6
+
+        return score
+
+    @classmethod
+    def _score_dependencies(
+        cls,
+        module: str,
+        dependency_graph: dict,
+        terms: list[str],
+    ) -> int:
+        if not isinstance(dependency_graph, dict):
+            return 0
+
+        imported_modules = dependency_graph.get(module, [])
+        if not isinstance(imported_modules, list):
+            return 0
+
+        score = 0
+
+        for imported in imported_modules:
+            value = str(imported).casefold().lstrip(".")
+            parts = set(value.split("."))
+
+            for term in terms:
+                if term == value:
+                    score += 24
+                elif term in parts:
+                    score += 14
+                elif term in value:
+                    score += 5
 
         return score
 
