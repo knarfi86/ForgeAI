@@ -1,1 +1,0 @@
-"""ForgeAI Qt user interface."""
