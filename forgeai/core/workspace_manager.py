@@ -33,9 +33,9 @@ class WorkspaceManager:
         self.active_project = project
         self._inherit_parent_ai_grants(project)
         statistics = self.indexer.index(project)
-        if self.analyzer.is_self_project(project):
-            self.brain.save_analysis(self.analyzer.analyze(project))
-            self.logger.info("Created self-analysis for ForgeAI")
+        analysis = self.analyzer.analyze(project)
+        self.brain.save_analysis(analysis)
+        self.logger.info("Created project analysis for %s", project)
         self.logger.info("Opened project %s with %s indexed files", project, statistics.file_count)
         return statistics
 
