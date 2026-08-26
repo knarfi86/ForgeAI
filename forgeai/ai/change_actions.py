@@ -1,15 +1,9 @@
-﻿"""Translate explicitly marked model actions into safe workspace previews."""
+"""Translate explicitly marked model actions into safe workspace previews."""
 
 import json
-import re
+
 
 from forgeai.core.workspace_tools import ChangePreview, WorkspaceTools
-
-
-ACTION_BLOCK = re.compile(
-    r"`forgeai-action\s*\n(.*?)`",
-    re.DOTALL | re.IGNORECASE,
-)
 
 
 def extract_change_previews(
@@ -21,29 +15,25 @@ def extract_change_previews(
     previews: list[ChangePreview] = []
     errors: list[str] = []
 
-    action_sources = [
-        match.group(1)
-        for match in ACTION_BLOCK.finditer(response)
-    ]
+    visible_response = response.strip()
 
-    visible_response = ACTION_BLOCK.sub("", response).strip()
+    try:
+        structured = json.loads(response)
 
-    if not action_sources:
-        try:
-            structured = json.loads(response)
+        if (
+            isinstance(structured, dict)
+            and isinstance(structured.get("actions"), list)
+        ):
+            action_sources = [
+                json.dumps(action)
+                for action in structured["actions"]
+            ]
+            visible_response = ""
+        else:
+            action_sources = []
 
-            if (
-                isinstance(structured, dict)
-                and isinstance(structured.get("actions"), list)
-            ):
-                action_sources = [
-                    json.dumps(action)
-                    for action in structured["actions"]
-                ]
-                visible_response = ""
-
-        except json.JSONDecodeError:
-            pass
+    except json.JSONDecodeError as error:
+        return visible_response, [], [f"Ung?ltige JSON-Antwort: {error}"]
 
     for source in action_sources:
         try:
@@ -64,12 +54,12 @@ def extract_change_previews(
             }:
                 raise ValueError(
                     "Nur 'create', 'create_directory' und 'replace' "
-                    "sind fÃ¼r KI-Ã„nderungen erlaubt."
+                    "sind für KI-Änderungen erlaubt."
                 )
 
             if not isinstance(path, str) or not path.strip():
                 raise ValueError(
-                    "Jede forgeai-action benÃ¶tigt einen gÃ¼ltigen "
+                    "Jede forgeai-action benötigt einen gültigen "
                     "relativen Pfad."
                 )
 
