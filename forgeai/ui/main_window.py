@@ -240,7 +240,10 @@ class MainWindow(QMainWindow):
         else:
             raw_content = self.chat_view.pending.content if self.chat_view.pending else ""
 
-        content, previews = self._prepare_model_changes(raw_content)
+        if self._stream_is_action:
+            content, previews = self._prepare_model_changes(raw_content)
+        else:
+            content, previews = raw_content, []
 
         if self.chat_view.pending:
             self.chat_view.pending.set_content(content)
@@ -409,7 +412,12 @@ Regeln:
         self.input_bar.set_busy(False)
 
     def choose_project(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Projekt auswählen")
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Projekt auswählen",
+            "",
+            QFileDialog.Option.DontUseNativeDialog,
+        )
         if folder:
             self.open_project(folder)
 
