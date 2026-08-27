@@ -228,7 +228,6 @@ class MainWindow(QMainWindow):
         self.worker.failed.connect(self._response_failed)
         self.input_bar.set_busy(True)
         self.worker.start()
-        self.refresh_chats()
 
     def _response_done(self) -> None:
         if not self.worker:
