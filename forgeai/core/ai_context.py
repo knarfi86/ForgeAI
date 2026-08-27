@@ -10,30 +10,47 @@ from forgeai.core.workspace_database import WorkspaceDatabase
 class AIContextProvider:
     """Reads only persisted, user-approved local project paths for Ollama prompts."""
 
-    MAX_CONTEXT_CHARS = 48_000
-    MAX_FILE_CHARS = 12_000
+    CHARS_PER_TOKEN = 4
 
     def __init__(self, database: WorkspaceDatabase, filesystem: FileSystem):
         self.database = database
         self.filesystem = filesystem
 
-    def build(self, project_path: Path | None) -> tuple[str, list[str]]:
-        """Build a bounded system-message fragment from granted text files only."""
+    def build(
+        self,
+        project_path: Path | None,
+        max_context_tokens: int = 8_192,
+        max_file_tokens: int | None = None,
+    ) -> tuple[str, list[str]]:
+        """Build a bounded system-message fragment using a model-dependent token budget."""
         if not project_path:
             return "", []
+
         root = self.filesystem.resolve(project_path)
         paths = self._granted_files(root)
+
+        max_context_chars = max(1, max_context_tokens) * self.CHARS_PER_TOKEN
+        effective_file_tokens = max_file_tokens or max(1, max_context_tokens // 2)
+        max_file_chars = max(1, effective_file_tokens) * self.CHARS_PER_TOKEN
+
         chunks: list[str] = []
         included: list[str] = []
         used = 0
+
         for path in paths:
             if not self.filesystem.is_previewable(path):
                 continue
+
             content = self.filesystem.read_text(path)
             relative = path.relative_to(root).as_posix()
-            chunk = f"\n\n--- Datei: {relative} ---\n{content[:self.MAX_FILE_CHARS]}"
-            if used + len(chunk) > self.MAX_CONTEXT_CHARS:
+            chunk = (
+                f"\n\n--- Datei: {relative} ---\n"
+                f"{content[:max_file_chars]}"
+            )
+
+            if used + len(chunk) > max_context_chars:
                 break
+
             chunks.append(chunk)
             included.append(relative)
             used += len(chunk)

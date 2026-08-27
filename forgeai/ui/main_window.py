@@ -210,7 +210,33 @@ class MainWindow(QMainWindow):
         self.chat_view.add_message("user", text)
         self.chat_view.add_message("assistant", "")
         messages = [{"role": "system", "content": SYSTEM_PROMPT + self._change_action_instructions()}]
-        context, included_files = self.ai_context.build(self.workspace.active_project)
+
+        model_context_length = self.ollama.get_context_length(
+            self.ollama_url,
+            self.model,
+        ) or 32_768
+
+        # Reserve 20 % for system instructions, chat history and model output.
+        num_ctx = max(8_192, int(model_context_length * 0.80))
+
+        # Use 60 % of the remaining request budget for approved project files.
+        project_context_tokens = max(4_096, int(num_ctx * 0.60))
+        per_file_tokens = max(2_048, project_context_tokens // 2)
+
+        context, included_files = self.ai_context.build(
+            self.workspace.active_project,
+            max_context_tokens=project_context_tokens,
+            max_file_tokens=per_file_tokens,
+        )
+
+        self.logger.info(
+            "Model %s advertises %s context tokens; using num_ctx=%s, project_context=%s, per_file=%s",
+            self.model,
+            model_context_length,
+            num_ctx,
+            project_context_tokens,
+            per_file_tokens,
+        )
         self.logger.info("Approved files sent to Ollama: %s", included_files)
         if context:
             messages.append({"role": "system", "content": context})
@@ -219,7 +245,11 @@ class MainWindow(QMainWindow):
         response_format = self._action_response_format(text)
 
         self.worker = self.ollama.stream_chat(
-            self.ollama_url, self.model, messages, response_format
+            self.ollama_url,
+            self.model,
+            messages,
+            response_format,
+            num_ctx=num_ctx,
         )
 
         if not self._stream_is_action:

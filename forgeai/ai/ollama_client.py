@@ -23,6 +23,8 @@ class OllamaStreamWorker(QThread):
         payload = {"model": self.model, "messages": self.messages, "stream": True}
         if self.response_format is not None:
             payload["format"] = self.response_format
+        if getattr(self, "num_ctx", None) is not None:
+            payload["options"] = {"num_ctx": int(self.num_ctx)}
 
         request = urllib.request.Request(
             f"{self.base_url}/api/chat",
@@ -74,10 +76,55 @@ class OllamaClient:
         except (urllib.error.URLError, json.JSONDecodeError, ValueError):
             return {}
 
+    def get_context_length(self, base_url: str, model_name: str) -> int | None:
+        """Return the largest context_length advertised by Ollama for a model."""
+        try:
+            request = urllib.request.Request(
+                f"{self.local_url(base_url)}/api/show",
+                data=json.dumps({"model": model_name}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+
+            with urllib.request.urlopen(request, timeout=5) as response:
+                data = json.load(response)
+
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
+            return None
+
+        found: list[int] = []
+
+        def collect_context_lengths(value) -> None:
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    if str(key).lower().endswith(".context_length"):
+                        try:
+                            found.append(int(item))
+                        except (TypeError, ValueError):
+                            pass
+                    collect_context_lengths(item)
+            elif isinstance(value, list):
+                for item in value:
+                    collect_context_lengths(item)
+
+        collect_context_lengths(data)
+
+        return max(found) if found else None
+
     def stream_chat(
-        self, base_url: str, model: str, messages: list[dict], response_format: dict | str | None = None,
+        self,
+        base_url: str,
+        model: str,
+        messages: list[dict],
+        response_format: dict | str | None = None,
+        num_ctx: int | None = None,
     ) -> OllamaStreamWorker:
-        return OllamaStreamWorker(base_url, model, messages, response_format)
+        worker = OllamaStreamWorker(base_url, model, messages, response_format)
+
+        if num_ctx is not None:
+            worker.num_ctx = int(num_ctx)
+
+        return worker
 
     def generate(
         self,
