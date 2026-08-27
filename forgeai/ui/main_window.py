@@ -318,34 +318,81 @@ class MainWindow(QMainWindow):
         if not self.workspace.active_project or self.workspace.project_mode() not in {
             ProjectMode.WRITE_WITH_CONFIRMATION, ProjectMode.AUTO_WRITE,
         }:
-            return "\n\nDu darfst keine Dateien verändern; liefere nur Erklärungen oder Vorschläge."
+            return "\n\nDu darfst keine Dateien \u00e4ndern; liefere nur Erkl\u00e4rungen oder Vorschl\u00e4ge."
+
         return """
+WICHTIG: Wenn eine Datei erstellt oder ge\u00e4ndert werden soll, MUSST du eine JSON-Antwort
+mit einer actions-Liste ausgeben. Erkl\u00e4rung oder Beispielcode allein reicht nicht
+und wird nicht als Datei\u00e4nderung ausgef\u00fchrt.
 
-WICHTIG: Wenn eine Datei erstellt oder geändert werden soll, MUSST du mindestens eine
-`forgeai-action` ausgeben. Erklärung oder Beispielcode allein reicht nicht und wird
-nicht ausgeführt. Gib niemals Python-Code oder andere Dateischreiboperationen aus.
+Das Format ist immer:
 
-Erlaubt sind ausschließlich diese Aktionen, jeweils in einem eigenen Block:
-```forgeai-action
-{"operation":"create","path":"datei.txt","content":"Inhalt"}
-```
-```forgeai-action
-{"operation":"create_directory","path":"neuer-ordner"}
-```
-```forgeai-action
-{"operation":"replace","path":"datei.py","old":"alter Text","new":"neuer Text"}
-```
+{
+  "actions": [
+    {
+      "operation": "create",
+      "path": "datei.txt",
+      "content": "Inhalt"
+    }
+  ]
+}
+
+Erlaubte Operationen:
+- create: Erstellt eine neue Datei.
+- create_directory: Erstellt ein neues Verzeichnis.
+- replace: Ersetzt exakt vorhandenen Text in einer bestehenden Datei.
+
+Beispiele:
+
+{
+  "actions": [
+    {
+      "operation": "create",
+      "path": "datei.txt",
+      "content": "Inhalt"
+    }
+  ]
+}
+
+{
+  "actions": [
+    {
+      "operation": "create_directory",
+      "path": "neuer-ordner"
+    }
+  ]
+}
+
+{
+  "actions": [
+    {
+      "operation": "replace",
+      "path": "datei.py",
+      "old": "alter Text",
+      "new": "neuer Text"
+    }
+  ]
+}
 
 Regeln:
-- Nur `create`, `create_directory` und `replace`.
-- Nur relative Pfade innerhalb des geöffneten Projekts; niemals absolute Pfade.
-- Kein Löschen und kein Umbenennen.
-- Gib keine pathlib-, open(), write_text(), shutil-, os- oder sonstigen
-  Dateischreiboperationen aus.
-- Bei einer Ordner-Erstellung verwende zwingend `create_directory`; gib niemals
-  mkdir, os.makedirs() oder eine Anleitung dafür aus.
-- Bei mehreren Änderungen gib für jede Änderung eine eigene `forgeai-action` aus.
-- Nutze nur Dateien oder Verzeichnisse, die der Benutzer für die KI freigegeben hat.
+- Nur create, create_directory und replace verwenden.
+- Nur relative Pfade innerhalb des ge\u00f6ffneten Projekts verwenden.
+- Niemals absolute Pfade verwenden.
+- Keine Dateien l\u00f6schen oder umbenennen.
+- Keine pathlib-, open(), write_text(), shutil-, os- oder sonstigen
+  Dateischreiboperationen ausgeben.
+- Bei bestehenden Dateien immer replace verwenden, wenn vorhandener Inhalt
+  ge\u00e4ndert werden soll.
+- Das Feld old muss exakt einem bereits vorhandenen zusammenh\u00e4ngenden Textabschnitt
+  der Datei entsprechen.
+- new darf nur die vom Benutzer gew\u00fcnschte \u00c4nderung enthalten.
+- Niemals bereits vorhandene Funktionen, Klassen, Imports oder Dokumentation
+  doppelt einf\u00fcgen.
+- Vor jeder \u00c4nderung den vorhandenen Dateiinhalt ber\u00fccksichtigen.
+- \u00c4ndere nur das, was der Benutzer verlangt.
+- Bei mehreren \u00c4nderungen alle Aktionen gemeinsam in der actions-Liste ausgeben.
+- Verwende nur Dateien oder Verzeichnisse, die der Benutzer f\u00fcr die KI freigegeben hat.
+- Au\u00dferhalb einer erforderlichen Datei\u00e4nderung darfst du normale Erkl\u00e4rungen geben.
 """
 
     def _prepare_model_changes(self, response: str) -> tuple[str, list[ChangePreview]]:
