@@ -209,7 +209,14 @@ class MainWindow(QMainWindow):
             self.history.title_chat(self.chat_id, text[:42])
         self.chat_view.add_message("user", text)
         self.chat_view.add_message("assistant", "")
-        messages = [{"role": "system", "content": SYSTEM_PROMPT + self._change_action_instructions()}]
+        is_analysis_request = self._is_analysis_request(text)
+
+        if is_analysis_request:
+            system_content = SYSTEM_PROMPT + self._analysis_instructions()
+        else:
+            system_content = SYSTEM_PROMPT + self._change_action_instructions()
+
+        messages = [{"role": "system", "content": system_content}]
 
         model_context_length = self.ollama.get_context_length(
             self.ollama_url,
@@ -291,8 +298,55 @@ class MainWindow(QMainWindow):
 
         self._stream_is_action = False
 
+    @staticmethod
+    def _is_analysis_request(request: str) -> bool:
+        """Detect requests that explicitly ask for analysis without file changes."""
+        normalized = request.casefold().strip()
+
+        analysis_verbs = (
+            "analysiere",
+            "analysier",
+            "untersuche",
+            "prüfe",
+            "pruefe",
+            "erkläre",
+            "erklaere",
+            "beschreibe",
+            "bewerte",
+            "überprüfe",
+            "ueberpruefe",
+        )
+
+        return any(
+            normalized.startswith(verb + " ")
+            or normalized == verb
+            for verb in analysis_verbs
+        )
+
+    @staticmethod
+    def _analysis_instructions() -> str:
+        return """
+ANALYSEMODUS:
+Die aktuelle Benutzeranfrage verlangt eine Analyse und keine Dateiänderung.
+
+Regeln:
+- Keine Dateien ändern.
+- Keine JSON-actions ausgeben.
+- Keine ChangePreview erzeugen.
+- Keine ausführbaren Dateiänderungsbefehle ausgeben.
+- Keine "hier ist der Befehl zum Kopieren"-Antwort erzeugen.
+- Nur den vorhandenen Code analysieren.
+- Tatsächlich vorhandene Probleme von bloßen Verbesserungsvorschlägen unterscheiden.
+- Behaupte keine Funktionen, Klassen, Imports oder Codeprobleme, die im bereitgestellten
+  Dateiinhalt nicht nachweisbar sind.
+- Wenn eine mögliche Verbesserung genannt wird, klar als Vorschlag kennzeichnen.
+"""
+
     def _action_response_format(self, request: str) -> dict | None:
         """Force structured local-model output for requests that change project files."""
+        if self._is_analysis_request(request):
+            return None
+
         if not self.workspace.active_project or self.workspace.project_mode() not in {
             ProjectMode.WRITE_WITH_CONFIRMATION, ProjectMode.AUTO_WRITE,
         }:
@@ -347,50 +401,13 @@ class MainWindow(QMainWindow):
         if not self.workspace.active_project or self.workspace.project_mode() not in {
             ProjectMode.WRITE_WITH_CONFIRMATION, ProjectMode.AUTO_WRITE,
         }:
-            return "\n\nDu darfst keine Dateien \u00e4ndern; liefere nur Erkl\u00e4rungen oder Vorschl\u00e4ge."
+            return "\n\nDu darfst keine Dateien ändern; liefere nur Erklärungen oder Vorschläge."
 
         return """
-WICHTIG: Wenn eine Datei erstellt oder ge\u00e4ndert werden soll, MUSST du eine JSON-Antwort
-mit einer actions-Liste ausgeben. Erkl\u00e4rung oder Beispielcode allein reicht nicht
-und wird nicht als Datei\u00e4nderung ausgef\u00fchrt.
+WICHTIG: Wenn eine Datei erstellt oder geändert werden soll, MUSST du eine JSON-Antwort
+mit einer actions-Liste ausgeben.
 
 Das Format ist immer:
-
-{
-  "actions": [
-    {
-      "operation": "create",
-      "path": "datei.txt",
-      "content": "Inhalt"
-    }
-  ]
-}
-
-Erlaubte Operationen:
-- create: Erstellt eine neue Datei.
-- create_directory: Erstellt ein neues Verzeichnis.
-- replace: Ersetzt exakt vorhandenen Text in einer bestehenden Datei.
-
-Beispiele:
-
-{
-  "actions": [
-    {
-      "operation": "create",
-      "path": "datei.txt",
-      "content": "Inhalt"
-    }
-  ]
-}
-
-{
-  "actions": [
-    {
-      "operation": "create_directory",
-      "path": "neuer-ordner"
-    }
-  ]
-}
 
 {
   "actions": [
@@ -403,25 +420,56 @@ Beispiele:
   ]
 }
 
-Regeln:
-- Nur create, create_directory und replace verwenden.
-- Nur relative Pfade innerhalb des ge\u00f6ffneten Projekts verwenden.
-- Niemals absolute Pfade verwenden.
-- Keine Dateien l\u00f6schen oder umbenennen.
-- Keine pathlib-, open(), write_text(), shutil-, os- oder sonstigen
-  Dateischreiboperationen ausgeben.
-- Bei bestehenden Dateien immer replace verwenden, wenn vorhandener Inhalt
-  ge\u00e4ndert werden soll.
-- Das Feld old muss exakt einem bereits vorhandenen zusammenh\u00e4ngenden Textabschnitt
-  der Datei entsprechen.
-- new darf nur die vom Benutzer gew\u00fcnschte \u00c4nderung enthalten.
-- Niemals bereits vorhandene Funktionen, Klassen, Imports oder Dokumentation
-  doppelt einf\u00fcgen.
-- Vor jeder \u00c4nderung den vorhandenen Dateiinhalt ber\u00fccksichtigen.
-- \u00c4ndere nur das, was der Benutzer verlangt.
-- Bei mehreren \u00c4nderungen alle Aktionen gemeinsam in der actions-Liste ausgeben.
-- Verwende nur Dateien oder Verzeichnisse, die der Benutzer f\u00fcr die KI freigegeben hat.
-- Au\u00dferhalb einer erforderlichen Datei\u00e4nderung darfst du normale Erkl\u00e4rungen geben.
+Erlaubte Operationen:
+- replace: ändert einen vorhandenen Bereich einer bestehenden Datei.
+- create: Erstellt eine neue Datei.
+- create_directory: Erstellt ein neues Verzeichnis.
+
+Du bist ForgeAI und erzeugst zur änderung bestehender Dateien ausschließlich präzise
+replace-Aktionen.
+
+Der Benutzer beschreibt nur die gewünschte änderung. Er liefert weder den Originalcode
+noch die zu ersetzenden Textstellen. ForgeAI analysiert den aktuellen Dateiinhalt
+selbstständig und ermittelt daraus die erforderlichen replace-Aktionen.
+
+Regeln für jede replace-Aktion:
+
+- old muss exakt und unverändert im aktuell bereitgestellten Dateiinhalt vorhanden sein.
+- old muss ein zusammenhängender Ausschnitt sein.
+- old so klein wie möglich halten, aber groß genug, um die Zielstelle eindeutig zu identifizieren.
+- Falls ein Ausschnitt mehrfach vorkommt, muss old erweitert werden, bis die gewünschte
+  Fundstelle eindeutig bestimmt ist.
+- old darf keine Markdown-Syntax, Codeblock-Markierungen oder zusätzliche Escapes enthalten.
+- new enthält ausschließlich die gewünschte Endfassung des ersetzten Bereichs.
+- Bestehende Formatierung, Einrückungen und Zeilenumbrüche müssen erhalten bleiben,
+  sofern sie nicht ausdrücklich geändert werden sollen.
+- Niemals mehr Code ersetzen als für die gewünschte änderung erforderlich.
+- Große Bereiche oder ganze Dateien dürfen nur ersetzt werden, wenn eine lokale änderung
+  technisch nicht möglich ist.
+- Unabhängige änderungen müssen als separate Aktionen ausgegeben werden.
+- Vor jeder Aktion prüfen, ob dieselbe änderung mit einem kleineren eindeutigen old-Bereich
+  umgesetzt werden kann.
+- Der Benutzer muss keinen Originalcode oder old-Block liefern.
+- ForgeAI darf erforderliche old-Blöcke selbstständig aus dem aktuellen Dateiinhalt ableiten.
+
+Grundprinzip:
+
+Änderungen müssen immer minimal-invasiv erfolgen. Bevorzuge die kleinste eindeutige
+Ersetzung statt vollständiger Neu-Generierung von Code oder Dateien.
+
+Wichtig:
+
+- Erzeuge niemals einen vollständigen Dateiinhalt als Ersatz, wenn die gewünschte änderung
+  durch eine oder mehrere lokale replace-Aktionen möglich ist.
+- Verwende für old ausschließlich Text, der tatsächlich im aktuellen Dateiinhalt vorhanden ist.
+- Erfinde keinen old-Block aus einer früheren Antwort, Erinnerung oder veralteten Kontextversion.
+- Vom Benutzer ausdrücklich vorgegebener Text muss wörtlich und unverändert übernommen werden.
+- Keine Rechtschreibkorrektur, übersetzung, Normalisierung oder stilistische Verbesserung
+  von ausdrücklich vorgegebenem Text.
+- Text innerhalb von Anführungszeichen ist exakt zu übernehmen.
+- Keine Dateien löschen oder umbenennen.
+- Nur relative Pfade innerhalb des geöffneten Projekts verwenden.
+- Nur freigegebene Dateien oder Verzeichnisse verwenden.
 """
 
     def _prepare_model_changes(self, response: str) -> tuple[str, list[ChangePreview]]:
