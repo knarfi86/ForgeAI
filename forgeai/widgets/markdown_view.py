@@ -23,6 +23,19 @@ class MarkdownView(QWidget):
         self.content = content
         self._render()
 
+    def set_streaming_content(self, content: str) -> None:
+        """Update streamed text without rebuilding CodeBlock widgets."""
+        self.content = content
+        body = re.sub(r"```.*?```", "", self.content, flags=re.S)
+        rendered = markdown.markdown(
+            body,
+            extensions=["fenced_code", "tables", "nl2br"],
+        )
+        self.browser.setHtml(
+            f"<style>body{{color:#e6edf3;background:#20252b}} "
+            f"code{{background:#15191d;padding:2px}}</style>{rendered}"
+        )
+
     def _render(self) -> None:
         blocks = re.findall(r"```(?:([^\n]*))?\n(.*?)```", self.content, re.S)
         body = re.sub(r"```.*?```", "", self.content, flags=re.S)

@@ -26,7 +26,9 @@ class ChatView(QScrollArea):
 
     def append_stream(self, text: str) -> None:
         if self.pending:
-            self.pending.set_content(self.pending.content + text); self._scroll_bottom()
+            content = self.pending.content + text
+            self.pending.set_streaming_content(content)
+            self._scroll_bottom()
 
     def add_change_proposal(self, previews: list[ChangePreview], apply_changes) -> None:
         proposal = ChangeProposal(previews, apply_changes)
