@@ -78,10 +78,11 @@ class OllamaClient:
             return {}
 
     def get_hardware_info(self) -> dict:
-        """Return detected NVIDIA VRAM and system RAM in bytes."""
+        """Return detected GPU and system-memory information."""
         info = {
-            "gpu_vram_bytes": None,
-            "system_ram_bytes": None,
+            "gpu_vram_total_bytes": None,
+            "system_ram_total_bytes": None,
+            "system_ram_available_bytes": None,
         }
 
         try:
@@ -96,13 +97,17 @@ class OllamaClient:
                 timeout=3,
                 check=True,
             )
-            values = []
+
+            totals = []
+
             for line in result.stdout.splitlines():
                 line = line.strip()
                 if line.isdigit():
-                    values.append(int(line) * 1024 * 1024)
-            if values:
-                info["gpu_vram_bytes"] = max(values)
+                    totals.append(int(line) * 1024 * 1024)
+
+            if totals:
+                info["gpu_vram_total_bytes"] = max(totals)
+
         except (OSError, subprocess.SubprocessError, ValueError):
             pass
 
@@ -124,8 +129,11 @@ class OllamaClient:
 
             status = MEMORYSTATUSEX()
             status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+
             if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
-                info["system_ram_bytes"] = int(status.ullTotalPhys)
+                info["system_ram_total_bytes"] = int(status.ullTotalPhys)
+                info["system_ram_available_bytes"] = int(status.ullAvailPhys)
+
         except (AttributeError, OSError, TypeError):
             pass
 
@@ -144,9 +152,8 @@ class OllamaClient:
 
         for model in data.get("models", []):
             if model.get("name") == model_name:
-                size = model.get("size")
                 try:
-                    return int(size) if size is not None else None
+                    return int(model.get("size"))
                 except (TypeError, ValueError):
                     return None
 
@@ -158,54 +165,91 @@ class OllamaClient:
         model_name: str,
         native_context: int | None,
     ) -> dict:
-        """Calculate a conservative context size from model size and detected hardware."""
+        """Choose a conservative context size from hardware and model requirements."""
         hardware = self.get_hardware_info()
-        vram = hardware.get("gpu_vram_bytes")
-        ram = hardware.get("system_ram_bytes")
+
+        vram_total = hardware.get("gpu_vram_total_bytes")
+        ram_total = hardware.get("system_ram_total_bytes")
+        ram_available = hardware.get("system_ram_available_bytes")
         model_size = self.get_model_size(base_url, model_name)
 
-        if native_context is None:
-            native_context = 32_768
+        native = int(native_context or 16_384)
 
-        recommended = min(native_context, 32_768)
-        reason = "conservative default"
+        # Context sizes are powers/standard boundaries supported by Ollama
+        # and intentionally conservative for local desktop hardware.
+        context_levels = (
+            8_192,
+            16_384,
+            32_768,
+            49_152,
+            65_536,
+            131_072,
+            262_144,
+        )
 
-        if vram and model_size:
-            ratio = model_size / vram
+        candidates = [value for value in context_levels if value <= native]
+        if not candidates:
+            candidates = [8_192]
 
-            if ratio <= 0.60:
-                recommended = min(native_context, 65_536)
-                reason = "model comfortably fits in detected VRAM"
-            elif ratio <= 0.85:
-                recommended = min(native_context, 49_152)
-                reason = "model fits with limited VRAM headroom"
-            elif ratio <= 1.05:
-                recommended = min(native_context, 32_768)
-                reason = "model approximately fills detected VRAM"
-            elif ratio <= 1.60:
-                recommended = min(native_context, 16_384)
-                reason = "model exceeds VRAM; conservative CPU/GPU offload context"
+        recommended = candidates[0]
+        reason = "safe minimum"
+
+        if vram_total and model_size:
+            # Do not assume that every byte of VRAM is available for the model.
+            # Keep 15% as a desktop/driver/runtime safety reserve.
+            usable_vram = int(vram_total * 0.85)
+            ratio = model_size / max(usable_vram, 1)
+
+            if ratio <= 0.50:
+                recommended = min(native, 131_072)
+                reason = "model leaves substantial VRAM headroom"
+            elif ratio <= 0.75:
+                recommended = min(native, 65_536)
+                reason = "model fits with reasonable VRAM headroom"
+            elif ratio <= 1.00:
+                recommended = min(native, 32_768)
+                reason = "model approximately fits within usable VRAM"
+            elif ratio <= 1.40:
+                recommended = min(native, 16_384)
+                reason = "model requires CPU/GPU offload"
             else:
-                recommended = min(native_context, 8_192)
-                reason = "model greatly exceeds VRAM; safe starting context"
+                recommended = min(native, 8_192)
+                reason = "model significantly exceeds usable VRAM"
 
-        # A very small RAM system should not receive an aggressive context
-        # when the model already needs CPU/GPU offloading.
-        if ram and model_size and model_size > ram and recommended > 8_192:
-            recommended = 8_192
-            reason = "model exceeds system RAM; reduced context"
+        # RAM is relevant when the model is larger than the practical GPU
+        # budget and therefore needs CPU-side memory.
+        if model_size and ram_available:
+            ram_safety_reserve = 6 * 1024**3
+            usable_ram = max(0, ram_available - ram_safety_reserve)
 
-        # Keep the value positive and reasonable.
-        recommended = max(8_192, int(recommended))
+            if model_size > usable_ram and recommended > 8_192:
+                recommended = 8_192
+                reason = "model exceeds safe available system RAM"
+
+        # On larger-memory systems, allow more context when the model is
+        # substantially smaller than the available resources.
+        if model_size and ram_total and vram_total:
+            combined_memory = int(vram_total * 0.85) + int(ram_total * 0.70)
+
+            if model_size < combined_memory * 0.35:
+                recommended = min(native, max(recommended, 131_072))
+                reason = "model is small relative to combined memory"
+
+        recommended = max(
+            8_192,
+            min(int(recommended), native),
+        )
 
         return {
-            "context_length": int(native_context),
+            "context_length": native,
             "recommended_context": recommended,
-            "gpu_vram_bytes": vram,
-            "system_ram_bytes": ram,
+            "gpu_vram_total_bytes": vram_total,
+            "system_ram_total_bytes": ram_total,
+            "system_ram_available_bytes": ram_available,
             "model_size_bytes": model_size,
             "reason": reason,
         }
+
 
     def get_context_length(self, base_url: str, model_name: str) -> int | None:
         """Return the context length advertised by Ollama for a model."""

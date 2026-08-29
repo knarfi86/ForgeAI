@@ -229,10 +229,13 @@ class MainWindow(QMainWindow):
 
         num_ctx = context_plan["recommended_context"]
 
-        # Reserve part of the request budget for system instructions,
-        # chat history and model output.
-        project_context_tokens = max(4_096, int(num_ctx * 0.60))
-        per_file_tokens = max(2_048, project_context_tokens // 2)
+        # Reserve part of the context for system instructions, chat history
+        # and model output. Keep project files inside the remaining budget.
+        project_context_tokens = max(4_096, int(num_ctx * 0.55))
+        per_file_tokens = max(
+            2_048,
+            min(project_context_tokens // 2, 8_192),
+        )
 
         context, included_files = self.ai_context.build(
             self.workspace.active_project,
@@ -243,15 +246,16 @@ class MainWindow(QMainWindow):
 
         self.logger.info(
             "Model %s: native_context=%s, recommended_context=%s, "
-            "project_context=%s, per_file=%s, gpu_vram=%s, ram=%s, "
-            "model_size=%s, reason=%s",
+            "project_context=%s, per_file=%s, gpu_vram_total=%s, "
+            "ram_total=%s, ram_available=%s, model_size=%s, reason=%s",
             self.model,
             context_plan["context_length"],
             context_plan["recommended_context"],
             project_context_tokens,
             per_file_tokens,
-            context_plan["gpu_vram_bytes"],
-            context_plan["system_ram_bytes"],
+            context_plan["gpu_vram_total_bytes"],
+            context_plan["system_ram_total_bytes"],
+            context_plan["system_ram_available_bytes"],
             context_plan["model_size_bytes"],
             context_plan["reason"],
         )
