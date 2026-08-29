@@ -216,17 +216,21 @@ class MainWindow(QMainWindow):
         else:
             system_content = SYSTEM_PROMPT + self._change_action_instructions()
 
-        messages = [{"role": "system", "content": system_content}]
-
         model_context_length = self.ollama.get_context_length(
             self.ollama_url,
             self.model,
         ) or 32_768
 
-        # Reserve 20 % for system instructions, chat history and model output.
-        num_ctx = max(8_192, int(model_context_length * 0.80))
+        context_plan = self.ollama.recommend_context_length(
+            self.ollama_url,
+            self.model,
+            model_context_length,
+        )
 
-        # Use 60 % of the remaining request budget for approved project files.
+        num_ctx = context_plan["recommended_context"]
+
+        # Reserve part of the request budget for system instructions,
+        # chat history and model output.
         project_context_tokens = max(4_096, int(num_ctx * 0.60))
         per_file_tokens = max(2_048, project_context_tokens // 2)
 
@@ -234,20 +238,29 @@ class MainWindow(QMainWindow):
             self.workspace.active_project,
             max_context_tokens=project_context_tokens,
             max_file_tokens=per_file_tokens,
+            exclude_noise=is_analysis_request,
         )
 
         self.logger.info(
-            "Model %s advertises %s context tokens; using num_ctx=%s, project_context=%s, per_file=%s",
+            "Model %s: native_context=%s, recommended_context=%s, "
+            "project_context=%s, per_file=%s, gpu_vram=%s, ram=%s, "
+            "model_size=%s, reason=%s",
             self.model,
-            model_context_length,
-            num_ctx,
+            context_plan["context_length"],
+            context_plan["recommended_context"],
             project_context_tokens,
             per_file_tokens,
+            context_plan["gpu_vram_bytes"],
+            context_plan["system_ram_bytes"],
+            context_plan["model_size_bytes"],
+            context_plan["reason"],
         )
         self.logger.info("Approved files sent to Ollama: %s", included_files)
         if context:
-            messages.append({"role": "system", "content": context})
+            system_content += "\n\n" + context
             self.logger.info("Sent %s approved local files to Ollama", len(included_files))
+
+        messages = [{"role": "system", "content": system_content}]
         messages += [{"role": row["role"], "content": row["content"]} for row in self.history.messages(self.chat_id)]
         response_format = self._action_response_format(text)
 
@@ -327,19 +340,37 @@ class MainWindow(QMainWindow):
     def _analysis_instructions() -> str:
         return """
 ANALYSEMODUS:
-Die aktuelle Benutzeranfrage verlangt eine Analyse und keine Dateiänderung.
+Die aktuelle Benutzeranfrage verlangt eine Analyse und keine Datei?nderung.
+
+WICHTIG:
+Die nachfolgende Systemnachricht enth?lt die aktuell f?r die KI freigegebenen
+Projektdateien. Diese Dateien sind der verf?gbare Projektkontext und sollen direkt
+analysiert werden.
+
+Frage den Benutzer NICHT erneut nach dem Dateiinhalt, wenn die ben?tigte Datei bereits
+im bereitgestellten Kontext enthalten ist.
+
+Wenn ein Projekt oder mehrere Projektdateien ?berpr?ft werden sollen:
+- Analysiere die bereitgestellten Dateien direkt.
+- Beurteile nur den tats?chlich bereitgestellten Code.
+- Benenne konkrete, im bereitgestellten Code nachweisbare Fehler.
+- Unterscheide echte Fehler klar von m?glichen Verbesserungen.
+- Wenn f?r eine vollst?ndige Aussage eine bestimmte Datei fehlt, nenne konkret welche Datei
+  im bereitgestellten Kontext fehlt.
+- Behaupte niemals, dass kein Projektkontext vorhanden ist, wenn Dateien im Kontext
+  bereitgestellt wurden.
 
 Regeln:
-- Keine Dateien ändern.
+- Keine Dateien ?ndern.
 - Keine JSON-actions ausgeben.
 - Keine ChangePreview erzeugen.
-- Keine ausführbaren Dateiänderungsbefehle ausgeben.
+- Keine ausf?hrbaren Datei?nderungsbefehle ausgeben.
 - Keine "hier ist der Befehl zum Kopieren"-Antwort erzeugen.
 - Nur den vorhandenen Code analysieren.
-- Tatsächlich vorhandene Probleme von bloßen Verbesserungsvorschlägen unterscheiden.
+- Tats?chlich vorhandene Probleme von blo?en Verbesserungsvorschl?gen unterscheiden.
 - Behaupte keine Funktionen, Klassen, Imports oder Codeprobleme, die im bereitgestellten
   Dateiinhalt nicht nachweisbar sind.
-- Wenn eine mögliche Verbesserung genannt wird, klar als Vorschlag kennzeichnen.
+- Wenn eine m?gliche Verbesserung genannt wird, klar als Vorschlag kennzeichnen.
 """
 
     def _action_response_format(self, request: str) -> dict | None:
