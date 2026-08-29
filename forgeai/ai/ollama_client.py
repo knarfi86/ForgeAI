@@ -1,6 +1,7 @@
 import json
 import urllib.error
 import urllib.request
+import subprocess
 
 from PySide6.QtCore import QThread, Signal
 
@@ -76,8 +77,138 @@ class OllamaClient:
         except (urllib.error.URLError, json.JSONDecodeError, ValueError):
             return {}
 
+    def get_hardware_info(self) -> dict:
+        """Return detected NVIDIA VRAM and system RAM in bytes."""
+        info = {
+            "gpu_vram_bytes": None,
+            "system_ram_bytes": None,
+        }
+
+        try:
+            result = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=memory.total",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=True,
+            )
+            values = []
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if line.isdigit():
+                    values.append(int(line) * 1024 * 1024)
+            if values:
+                info["gpu_vram_bytes"] = max(values)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            pass
+
+        try:
+            import ctypes
+
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = MEMORYSTATUSEX()
+            status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                info["system_ram_bytes"] = int(status.ullTotalPhys)
+        except (AttributeError, OSError, TypeError):
+            pass
+
+        return info
+
+    def get_model_size(self, base_url: str, model_name: str) -> int | None:
+        """Return the installed model size in bytes when Ollama reports it."""
+        try:
+            with urllib.request.urlopen(
+                f"{self.local_url(base_url)}/api/tags",
+                timeout=5,
+            ) as response:
+                data = json.load(response)
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
+            return None
+
+        for model in data.get("models", []):
+            if model.get("name") == model_name:
+                size = model.get("size")
+                try:
+                    return int(size) if size is not None else None
+                except (TypeError, ValueError):
+                    return None
+
+        return None
+
+    def recommend_context_length(
+        self,
+        base_url: str,
+        model_name: str,
+        native_context: int | None,
+    ) -> dict:
+        """Calculate a conservative context size from model size and detected hardware."""
+        hardware = self.get_hardware_info()
+        vram = hardware.get("gpu_vram_bytes")
+        ram = hardware.get("system_ram_bytes")
+        model_size = self.get_model_size(base_url, model_name)
+
+        if native_context is None:
+            native_context = 32_768
+
+        recommended = min(native_context, 32_768)
+        reason = "conservative default"
+
+        if vram and model_size:
+            ratio = model_size / vram
+
+            if ratio <= 0.60:
+                recommended = min(native_context, 65_536)
+                reason = "model comfortably fits in detected VRAM"
+            elif ratio <= 0.85:
+                recommended = min(native_context, 49_152)
+                reason = "model fits with limited VRAM headroom"
+            elif ratio <= 1.05:
+                recommended = min(native_context, 32_768)
+                reason = "model approximately fills detected VRAM"
+            elif ratio <= 1.60:
+                recommended = min(native_context, 16_384)
+                reason = "model exceeds VRAM; conservative CPU/GPU offload context"
+            else:
+                recommended = min(native_context, 8_192)
+                reason = "model greatly exceeds VRAM; safe starting context"
+
+        # A very small RAM system should not receive an aggressive context
+        # when the model already needs CPU/GPU offloading.
+        if ram and model_size and model_size > ram and recommended > 8_192:
+            recommended = 8_192
+            reason = "model exceeds system RAM; reduced context"
+
+        # Keep the value positive and reasonable.
+        recommended = max(8_192, int(recommended))
+
+        return {
+            "context_length": int(native_context),
+            "recommended_context": recommended,
+            "gpu_vram_bytes": vram,
+            "system_ram_bytes": ram,
+            "model_size_bytes": model_size,
+            "reason": reason,
+        }
+
     def get_context_length(self, base_url: str, model_name: str) -> int | None:
-        """Return the largest context_length advertised by Ollama for a model."""
+        """Return the context length advertised by Ollama for a model."""
         try:
             request = urllib.request.Request(
                 f"{self.local_url(base_url)}/api/show",
@@ -92,24 +223,19 @@ class OllamaClient:
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
             return None
 
-        found: list[int] = []
+        model_info = data.get("model_info", {})
+        if not isinstance(model_info, dict):
+            return None
 
-        def collect_context_lengths(value) -> None:
-            if isinstance(value, dict):
-                for key, item in value.items():
-                    if str(key).lower().endswith(".context_length"):
-                        try:
-                            found.append(int(item))
-                        except (TypeError, ValueError):
-                            pass
-                    collect_context_lengths(item)
-            elif isinstance(value, list):
-                for item in value:
-                    collect_context_lengths(item)
+        for key, value in model_info.items():
+            if str(key).lower().endswith(".context_length"):
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    return None
 
-        collect_context_lengths(data)
+        return None
 
-        return max(found) if found else None
 
     def stream_chat(
         self,

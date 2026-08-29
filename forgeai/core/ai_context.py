@@ -21,6 +21,7 @@ class AIContextProvider:
         project_path: Path | None,
         max_context_tokens: int = 8_192,
         max_file_tokens: int | None = None,
+        exclude_noise: bool = False,
     ) -> tuple[str, list[str]]:
         """Build a bounded system-message fragment using a model-dependent token budget."""
         if not project_path:
@@ -37,9 +38,27 @@ class AIContextProvider:
         included: list[str] = []
         used = 0
 
+        noise_directories = {
+            ".git",
+            ".venv",
+            "venv",
+            "__pycache__",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+            "node_modules",
+            "dist",
+            "build",
+        }
+
         for path in paths:
             if not self.filesystem.is_previewable(path):
                 continue
+
+            if exclude_noise:
+                relative_parts = path.relative_to(root).parts
+                if any(part in noise_directories for part in relative_parts):
+                    continue
 
             content = self.filesystem.read_text(path)
             relative = path.relative_to(root).as_posix()
