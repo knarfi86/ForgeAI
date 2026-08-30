@@ -159,3 +159,98 @@ Die Verantwortlichkeiten sind bewusst getrennt:
 → kommuniziert ausschließlich mit der lokalen Ollama-Instanz
 
 Dadurch sind KI-Vorschlag, Benutzerbestätigung, Freigabeprüfung und tatsächlicher Schreibzugriff voneinander getrennt.
+
+
+## Projektanalyse
+
+ForgeAI besitzt zwei Analyseebenen:
+
+### 1. Deterministische lokale Analyse
+
+`ProjectAnalyzer` analysiert das Projekt ohne LLM. Dabei werden lokale,
+reproduzierbare Informationen aus dem Dateisystem und dem Python-AST gewonnen.
+
+Erfasst werden unter anderem:
+
+- Dateien und Ordner
+- Programmiersprachen
+- Python-Module
+- Klassen
+- Funktionen und Methoden
+- Imports und Modulstruktur
+- Git-Repository-Informationen
+- offene Aufgaben aus der Projektdokumentation
+
+Diese Analyse bildet die objektive strukturelle Grundlage und wird von
+`ForgeBrain` persistent gespeichert.
+
+### 2. LLM-Gegenanalyse
+
+Die deterministische Analyse kann anschließend von einem lokalen LLM geprüft
+und fachlich bewertet werden.
+
+Die geplante Gegenanalyse arbeitet in konfigurierbaren Runden:
+
+1. ForgeAI erstellt die lokale Basisanalyse.
+2. Ein LLM prüft die Analyse und sucht nach fehlenden, widersprüchlichen oder
+   falsch bewerteten Punkten.
+3. Die Analyse wird anhand der Rückmeldung korrigiert.
+4. In weiteren Runden wird die überarbeitete Analyse erneut geprüft.
+5. Optional kann nach einer oder mehreren Runden ein anderes Modell als
+   unabhängiger Prüfer eingesetzt werden.
+6. Am Ende wird aus Basisanalyse und Gegenprüfungen eine konsolidierte
+   Projektanalyse erstellt.
+
+Die Anzahl der Analyse-Runden soll über die Einstellungen konfigurierbar sein.
+Der geplante Standardwert beträgt drei Runden.
+
+Ein Modellwechsel zwischen den Runden ist ausdrücklich vorgesehen, damit die
+Analyse nicht ausschließlich von einer einzigen Modellperspektive abhängt.
+
+Die LLM-Gegenanalyse ersetzt die deterministische Analyse nicht. Sie ergänzt
+sie. Dadurch bleiben objektiv aus dem Projekt ableitbare Fakten von der
+interpretierenden Bewertung des LLM getrennt.
+
+### Geplante Analysearchitektur
+
+`ProjectAnalyzer`
+→ erstellt strukturelle Basisanalyse
+
+`AIContextProvider`
+→ stellt gezielt freigegebene Projektinformationen als Kontext bereit
+
+`OllamaClient`
+→ kommuniziert mit den lokalen LLMs
+
+`LLM Analysis / Review`
+→ prüft und korrigiert die Analyse
+
+`ForgeBrain`
+→ speichert die konsolidierte Analyse
+
+Die genaue technische Aufteilung der späteren Review-Komponente wird erst bei
+der Implementierung festgelegt.
+### Geplante Analysearchitektur
+
+ProjectAnalyzer
+→ erstellt die deterministische strukturelle Basisanalyse
+
+AIContextProvider
+→ stellt gezielt freigegebene Projektinformationen als Kontext bereit
+
+OllamaClient
+→ kommuniziert mit den lokalen LLMs
+
+AnalysisReview
+→ prüft die Basisanalyse, erkennt Schwachstellen und formuliert Korrekturen
+
+AnalysisOrchestrator
+→ steuert die konfigurierbaren Analyse-Runden, übergibt die korrigierte Analyse an die nächste Runde und kann zwischen den Runden unterschiedliche Modelle einsetzen
+
+ForgeBrain
+→ speichert die konsolidierte Analyse
+
+Die genaue technische Aufteilung der späteren Review- und Orchestrierungs-
+Komponenten wird erst bei der Implementierung festgelegt. Die Architektur
+soll jedoch sicherstellen, dass deterministische Fakten, LLM-Bewertungen,
+Korrekturen und die finale Konsolidierung getrennt nachvollziehbar bleiben.

@@ -89,3 +89,52 @@ Nach einer funktionalen Änderung:
 4. `git diff` und `git diff --check` prüfen
 5. committen
 6. pushen
+
+
+## Mehrstufige Projektanalyse
+
+### Geplant
+
+Die bestehende deterministische Projektanalyse soll um eine lokale LLM-
+Gegenanalyse erweitert werden.
+
+Ziel ist eine Analyse, bei der das LLM nicht die objektive Projektanalyse
+ersetzt, sondern sie überprüft, Schwachstellen erkennt und Verbesserungen
+vorschlägt.
+
+Geplant:
+
+- [ ] LLM-Gegenanalyse auf Basis der deterministischen `ProjectAnalyzer`-Analyse
+- [ ] konfigurierbare Anzahl von Analyse-Runden
+- [ ] Standardwert: 3 Runden
+- [ ] LLM prüft und korrigiert die vorherige Analyse
+- [ ] Übergabe der korrigierten Analyse an die nächste Runde
+- [ ] optionaler Modellwechsel zwischen Analyse-Runden
+- [ ] unabhängige Prüfung durch ein zweites Modell
+- [ ] Konsolidierung der Ergebnisse zu einer finalen Analyse
+- [ ] Speicherung der finalen Analyse über `ForgeBrain`
+- [ ] Anzeige des Analyseverlaufs bzw. des finalen Ergebnisses in der UI
+- [ ] Einstellungen für Rundenzahl und verwendete Prüfmodelle
+
+### Zielbild
+
+Die Analyse soll nach dem Prinzip arbeiten:
+
+`ForgeAI Basisanalyse`
+→ LLM Prüfung
+→ Korrektur
+→ erneute Prüfung
+→ weitere Korrektur
+→ optional anderes Modell
+→ konsolidierte Analyse
+
+Die Anzahl der Runden soll nicht fest im Code verdrahtet werden. Der Benutzer
+soll sie über das Einstellungsmenü bestimmen können.
+
+Die Möglichkeit, zwischen den Runden ein anderes Modell einzusetzen, soll
+bewusst unterstützt werden. Unterschiedliche Modelle können unterschiedliche
+Schwachstellen erkennen und reduzieren dadurch das Risiko, dass ein einzelnes
+Modell seine eigene fehlerhafte Interpretation mehrfach bestätigt.
+
+Die deterministische Analyse bleibt dabei die faktische Grundlage. Das LLM
+liefert zusätzliche Interpretation, Prüfung und Verbesserung.

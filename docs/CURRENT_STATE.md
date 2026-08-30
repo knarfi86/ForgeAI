@@ -3,8 +3,8 @@
 ## Git
 
 - Branch: `forgeai-dev`
-- Referenz-Commit: `6794ede`
-- Commit: `Remove temporary backup files`
+- Referenz-Commit: `87c3bb9`
+- Commit: `refactor: consolidate Ollama client architecture`
 - Repository: `knarfi86/ForgeAI`
 
 ## Aktueller Funktionsstand
@@ -199,3 +199,55 @@ Vor der nächsten funktionalen Codeänderung:
 Erst danach wird die nächste technische Änderung am Code begonnen.
 
 Der zuvor behobene Windows-Absturz ist abgeschlossen und wird nicht erneut als offenes Problem behandelt, solange er nicht wieder auftritt.
+
+
+## Projektanalyse
+
+Die aktuelle Projektanalyse ist deterministisch und benötigt grundsätzlich
+kein LLM.
+
+`ProjectAnalyzer` wertet lokale Projektinformationen aus, darunter Dateien,
+Ordner, Python-Module, Klassen, Funktionen, Imports, Sprachen und
+Projektmetadaten.
+
+Die Analyse wird über `ForgeBrain` gespeichert.
+
+### Geplante LLM-Gegenanalyse
+
+Die deterministische Analyse soll künftig durch eine mehrstufige lokale
+LLM-Gegenanalyse ergänzt werden.
+
+Geplant ist:
+
+- konfigurierbare Anzahl von Analyse-Runden
+- Standardwert: 3 Runden
+- LLM prüft die Basisanalyse
+- erkannte Schwachstellen werden korrigiert
+- die korrigierte Analyse wird erneut geprüft
+- optional kann ein anderes Modell als unabhängiger Prüfer eingesetzt werden
+- am Ende entsteht eine konsolidierte Analyse
+
+Die LLM-Prüfung ersetzt `ProjectAnalyzer` nicht. Sie baut auf dessen
+objektiver Analyse auf und ergänzt diese um Interpretation und Gegenprüfung.
+
+Diese Funktion ist derzeit **noch nicht implementiert**.
+
+## Ollama-Architektur
+
+Die Ollama-Kommunikation ist auf `forgeai.ai.ollama_client.OllamaClient`
+zentralisiert.
+
+Die früheren `OllamaManager`-Implementierungen wurden entfernt.
+
+Aktuelle produktive Stellen verwenden:
+
+- `forgeai/ai/ollama_client.py`
+- `OllamaClient.list_models()`
+- `OllamaClient.get_context_length()`
+- `OllamaClient.recommend_context_length()`
+- `OllamaClient.stream_chat()`
+- `OllamaClient.generate()`
+- `OllamaClient.analyze_project()`
+
+`WorkspaceManager`, `MainWindow`, `SettingsDialog` und `CodeAgent`
+verwenden damit dieselbe zentrale Ollama-Schnittstelle.
