@@ -49,32 +49,11 @@ class WorkspaceTools:
         return [path.relative_to(self.root).as_posix() for path in self.filesystem.find_text(self.root, text)]
 
     def replace_text(self, path: str | Path, old: str, new: str) -> ChangePreview:
-        """Create a replace preview only when old matches exactly once."""
         target = self._path(path)
         before = self.filesystem.read_text(target)
-
-        if not old:
-            raise ValueError(
-                "Der zu ersetzende Text ('old') darf nicht leer sein."
-            )
-
-        match_count = before.count(old)
-
-        if match_count == 0:
-            raise ValueError(
-                "Der zu ersetzende Text wurde nicht gefunden. "
-                "Der 'old'-Block muss exakt zum aktuellen Dateiinhalt passen."
-            )
-
-        if match_count > 1:
-            raise ValueError(
-                f"Der zu ersetzende Text wurde {match_count}-mal gefunden. "
-                "Die ?nderung wurde aus Sicherheitsgr?nden nicht vorbereitet. "
-                "Der 'old'-Block muss genau eine Fundstelle haben."
-            )
-
-        after = before.replace(old, new, 1)
-        return ChangePreview("replace", target, before, after)
+        if old not in before:
+            raise ValueError("Der zu ersetzende Text wurde nicht gefunden.")
+        return ChangePreview("replace", target, before, before.replace(old, new))
 
     def create_file(self, path: str | Path, content: str = "") -> ChangePreview:
         target = self._path(path)

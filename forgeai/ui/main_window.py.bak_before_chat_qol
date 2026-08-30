@@ -57,7 +57,6 @@ class MainWindow(QMainWindow):
         self.chat_id: int | None = None
         self._pending_user_request = ""
         self._stream_is_action = False
-        self._pending_change_previews = None
         self.ollama_url = Config.LOCAL_OLLAMA_URL
         self._save_setting("ollama_url", self.ollama_url)
         self.model = self._setting("model", Config.DEFAULT_MODEL)
@@ -68,7 +67,7 @@ class MainWindow(QMainWindow):
         self._build_menus()
         self._apply_theme()
         self._restore_window()
-        self._restore_chat()
+        self.new_chat()
 
     def _build_ui(self) -> None:
         toolbar = QToolBar("ForgeAI")
@@ -82,8 +81,7 @@ class MainWindow(QMainWindow):
         self.terminal = TerminalPanel()
         self.input_bar = InputBar()
         self.sidebar.new_chat_requested.connect(self.new_chat)
-        self.sidebar.delete_chats_requested.connect(self.delete_chats)
-        self.sidebar.delete_all_chats_requested.connect(self.delete_all_chats)
+        self.sidebar.delete_chat_requested.connect(self.delete_chat)
         self.sidebar.chat_selected.connect(self.load_chat)
         self.input_bar.submitted.connect(self.send_message)
         self.project_panel.open_project_requested.connect(self.open_project)
@@ -183,74 +181,17 @@ class MainWindow(QMainWindow):
     def refresh_chats(self) -> None:
         self.sidebar.populate(self.history.list_chats(), self.chat_id)
 
-    def _restore_chat(self) -> None:
-        """Restore the most recently updated chat without creating an empty one."""
-        chats = self.history.list_chats()
-
-        if chats:
-            self.load_chat(chats[0]["id"])
-            return
-
-        self.chat_id = None
-        self.chat_view.clear_messages()
-        self.refresh_chats()
-
     def new_chat(self) -> None:
         self.chat_id = self.history.create_chat()
         self.chat_view.clear_messages()
         self.refresh_chats()
 
-    def delete_chats(self, chat_ids: list[int]) -> None:
-        if not chat_ids:
-            return
-
-        count = len(chat_ids)
-        answer = QMessageBox.question(
-            self,
-            "Chats l?schen",
-            f"Sollen {count} ausgew?hlte Chats wirklich gel?scht werden?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-
-        if answer != QMessageBox.StandardButton.Yes:
-            return
-
-        current_deleted = self.chat_id in chat_ids if self.chat_id is not None else False
-        self.history.delete_chats(chat_ids)
-
-        remaining = self.history.list_chats()
-
-        if current_deleted:
-            if remaining:
-                self.load_chat(remaining[0]["id"])
-            else:
-                self.chat_id = None
-                self.chat_view.clear_messages()
-                self.refresh_chats()
+    def delete_chat(self, chat_id: int) -> None:
+        self.history.delete_chat(chat_id)
+        if chat_id == self.chat_id:
+            self.new_chat()
         else:
             self.refresh_chats()
-
-    def delete_all_chats(self) -> None:
-        chats = self.history.list_chats()
-        if not chats:
-            return
-
-        answer = QMessageBox.question(
-            self,
-            "Alle Chats l?schen",
-            "Sollen wirklich ALLE Chats inklusive ihrer Nachrichten gel?scht werden?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-
-        if answer != QMessageBox.StandardButton.Yes:
-            return
-
-        self.history.delete_all_chats()
-        self.chat_id = None
-        self.chat_view.clear_messages()
-        self.refresh_chats()
 
     def load_chat(self, chat_id: int) -> None:
         self.chat_id = chat_id
@@ -261,40 +202,9 @@ class MainWindow(QMainWindow):
     def send_message(self, text: str) -> None:
         if self.worker and self.worker.isRunning() or self.chat_id is None:
             return
-
-        if self._pending_change_previews and self._is_change_confirmation(text):
-            self.history.add_message(self.chat_id, "user", text)
-            self.chat_view.add_message("user", text)
-            self.chat_view.add_message("assistant", "")
-
-            previews = self._pending_change_previews
-            self._pending_change_previews = None
-
-            success, message = self._apply_change_previews(previews)
-            status_title = (
-                "?nderungen angewendet"
-                if success
-                else "?nderungen nicht angewendet"
-            )
-            result_message = f"**{status_title}:** {message}"
-
-            if self.chat_view.pending:
-                self.chat_view.pending.set_content(result_message)
-
-            if self.chat_id is not None:
-                self.history.add_message(
-                    self.chat_id,
-                    "assistant",
-                    result_message,
-                )
-
-            self.refresh_chats()
-            return
         self.history.add_message(self.chat_id, "user", text)
         self._pending_user_request = text
         self._stream_is_action = self._action_response_format(text) is not None
-        print("[DEBUG action] request=", repr(text))
-        print("[DEBUG action] stream_is_action=", self._stream_is_action)
         if len(self.history.messages(self.chat_id)) == 1:
             self.history.title_chat(self.chat_id, text[:42])
         self.chat_view.add_message("user", text)
@@ -398,70 +308,12 @@ class MainWindow(QMainWindow):
         self.refresh_chats()
 
         if previews:
-            self._pending_change_previews = previews
             self.chat_view.add_change_proposal(
                 previews,
                 lambda: self._apply_change_previews(previews),
             )
 
         self._stream_is_action = False
-
-    @staticmethod
-    def _is_change_confirmation(request: str) -> bool:
-        """Detect explicit chat confirmations for the currently pending preview."""
-        normalized = " ".join(request.casefold().strip().split())
-
-        confirmations = (
-            "fuehre das aus",
-            "\u0066\u00fchre das aus",
-
-            "fuehre die aenderung aus",
-            "\u0066\u00fchre die \u00e4nderung aus",
-
-            "fuehre die aenderungen aus",
-            "\u0066\u00fchre die \u00e4nderungen aus",
-
-            "fuehre es aus",
-            "\u0066\u00fchre es aus",
-
-            "wende das an",
-            "wende die aenderung an",
-            "wende die \u00e4nderung an",
-            "wende die aenderungen an",
-            "wende die \u00e4nderungen an",
-
-            "anwenden",
-            "bitte anwenden",
-
-            "aenderungen anwenden",
-            "\u00e4nderungen anwenden",
-            "aenderung anwenden",
-            "\u00e4nderung anwenden",
-
-            "aendere das",
-            "\u00e4ndere das",
-
-            "mach das",
-            "mach es",
-            "setz das um",
-            "setze das um",
-            "umsetzen",
-
-            "uebernehmen",
-            "\u00fcbernehmen",
-            "ja uebernehmen",
-            "ja \u00fcbernehmen",
-            "bitte uebernehmen",
-            "bitte \u00fcbernehmen",
-
-            "bestaetigt",
-            "best\u00e4tigt",
-            "einverstanden",
-            "genehmigt",
-            "freigegeben",
-        )
-
-        return normalized in confirmations
 
     @staticmethod
     def _is_analysis_request(request: str) -> bool:
@@ -531,45 +383,13 @@ Regeln:
             return None
 
         if not self.workspace.active_project or self.workspace.project_mode() not in {
-            ProjectMode.WRITE_WITH_CONFIRMATION,
-            ProjectMode.AUTO_WRITE,
+            ProjectMode.WRITE_WITH_CONFIRMATION, ProjectMode.AUTO_WRITE,
         }:
             return None
-
-        normalized = request.casefold()
-
-        change_verbs = (
-            "erstelle",
-            "erstell",
-            "anlegen",
-            "anlege",
-            "\u00e4ndere",
-            "aendere",
-            "bearbeite",
-            "\u00fcberschreibe",
-            "ueberschreibe",
-            "\u00e4ndern",
-            "aendern",
-            "f\u00fcge",
-            "fuege",
-            "verbessere",
-            "implementiere",
-            "ersetze",
-            "ersetzen",
-            "entferne",
-            "entfern",
-            "l\u00f6sche",
-            "loesche",
-            "behebe",
-            "repariere",
-            "aktualisiere",
-            "\u00fcberarbeite",
-            "ueberarbeite",
-        )
-
-        if not any(verb in normalized for verb in change_verbs):
+        request = request.casefold()
+        change_verbs = ("erstelle", "erstell", "anlegen", "anlege", "ändere", "aendere", "bearbeite", "füge", "fuege", "verbessere", "implementiere")
+        if not any(verb in request for verb in change_verbs):
             return None
-
         return {
             "type": "object",
             "properties": {
@@ -581,50 +401,29 @@ Regeln:
                             {
                                 "type": "object",
                                 "properties": {
-                                    "operation": {
-                                        "type": "string",
-                                        "enum": ["create"],
-                                    },
+                                    "operation": {"type": "string", "enum": ["create"]},
                                     "path": {"type": "string"},
                                     "content": {"type": "string"},
                                 },
-                                "required": [
-                                    "operation",
-                                    "path",
-                                    "content",
-                                ],
+                                "required": ["operation", "path", "content"],
                             },
                             {
                                 "type": "object",
                                 "properties": {
-                                    "operation": {
-                                        "type": "string",
-                                        "enum": ["create_directory"],
-                                    },
+                                    "operation": {"type": "string", "enum": ["create_directory"]},
                                     "path": {"type": "string"},
                                 },
-                                "required": [
-                                    "operation",
-                                    "path",
-                                ],
+                                "required": ["operation", "path"],
                             },
                             {
                                 "type": "object",
                                 "properties": {
-                                    "operation": {
-                                        "type": "string",
-                                        "enum": ["replace"],
-                                    },
+                                    "operation": {"type": "string", "enum": ["replace"]},
                                     "path": {"type": "string"},
                                     "old": {"type": "string"},
                                     "new": {"type": "string"},
                                 },
-                                "required": [
-                                    "operation",
-                                    "path",
-                                    "old",
-                                    "new",
-                                ],
+                                "required": ["operation", "path", "old", "new"],
                             },
                         ],
                     },
@@ -634,23 +433,14 @@ Regeln:
         }
 
     def _change_action_instructions(self) -> str:
-        """Return instructions for structured file-change actions."""
-        if (
-            not self.workspace.active_project
-            or self.workspace.project_mode()
-            not in {
-                ProjectMode.WRITE_WITH_CONFIRMATION,
-                ProjectMode.AUTO_WRITE,
-            }
-        ):
-            return (
-                "\n\nDu darfst keine Dateien \u00e4ndern; "
-                "liefere nur Erkl\u00e4rungen oder Vorschl\u00e4ge."
-            )
+        if not self.workspace.active_project or self.workspace.project_mode() not in {
+            ProjectMode.WRITE_WITH_CONFIRMATION, ProjectMode.AUTO_WRITE,
+        }:
+            return "\n\nDu darfst keine Dateien ändern; liefere nur Erklärungen oder Vorschläge."
 
         return """
-WICHTIG: Wenn eine Datei erstellt oder ge\u00e4ndert werden soll, MUSST du eine
-JSON-Antwort mit einer actions-Liste ausgeben.
+WICHTIG: Wenn eine Datei erstellt oder geändert werden soll, MUSST du eine JSON-Antwort
+mit einer actions-Liste ausgeben.
 
 Das Format ist immer:
 
@@ -666,98 +456,84 @@ Das Format ist immer:
 }
 
 Erlaubte Operationen:
-- replace: \u00e4ndert einen vorhandenen Bereich einer bestehenden Datei.
-- create: erstellt eine neue Datei.
-- create_directory: erstellt ein neues Verzeichnis.
+- replace: ändert einen vorhandenen Bereich einer bestehenden Datei.
+- create: Erstellt eine neue Datei.
+- create_directory: Erstellt ein neues Verzeichnis.
 
-Bei bestehenden Dateien verwendest du ausschlie\u00dflich replace-Aktionen.
+Du bist ForgeAI und erzeugst zur änderung bestehender Dateien ausschließlich präzise
+replace-Aktionen.
 
-Der Benutzer liefert den Originalcode und die zu ersetzende Textstelle nicht
-notwendigerweise selbst. Wenn der relevante Dateiinhalt bereits im bereitgestellten
-Projektkontext enthalten ist, analysiere ihn selbst und ermittle daraus die
-erforderliche replace-Aktion.
+Der Benutzer beschreibt nur die gewünschte änderung. Er liefert weder den Originalcode
+noch die zu ersetzenden Textstellen. ForgeAI analysiert den aktuellen Dateiinhalt
+selbstständig und ermittelt daraus die erforderlichen replace-Aktionen.
 
-Regeln f\u00fcr jede replace-Aktion:
+Regeln für jede replace-Aktion:
 
-- old muss exakt und unver\u00e4ndert im aktuell bereitgestellten Dateiinhalt vorkommen.
-- old muss ein zusammenh\u00e4ngender Ausschnitt sein.
-- old so klein wie m\u00f6glich halten, aber gro\u00df genug, um die Zielstelle eindeutig
-  zu identifizieren.
-- old muss genau eine Fundstelle im aktuellen Dateiinhalt haben.
-- Wenn ein geeigneter old-Block nicht eindeutig bestimmt werden kann, erstelle keine
-  unsichere Aktion.
-- Erfinde niemals Dateiinhalt, der nicht im bereitgestellten Kontext vorhanden ist.
-- Ver\u00e4ndere nur die Dateien, die f\u00fcr die Benutzeranforderung wirklich notwendig sind.
-- Bestehende, bereits korrekte Tests oder Funktionen d\u00fcrfen nicht unn\u00f6tig ersetzt werden.
+- old muss exakt und unverändert im aktuell bereitgestellten Dateiinhalt vorhanden sein.
+- old muss ein zusammenhängender Ausschnitt sein.
+- old so klein wie möglich halten, aber groß genug, um die Zielstelle eindeutig zu identifizieren.
+- Falls ein Ausschnitt mehrfach vorkommt, muss old erweitert werden, bis die gewünschte
+  Fundstelle eindeutig bestimmt ist.
+- old darf keine Markdown-Syntax, Codeblock-Markierungen oder zusätzliche Escapes enthalten.
+- new enthält ausschließlich die gewünschte Endfassung des ersetzten Bereichs.
+- Bestehende Formatierung, Einrückungen und Zeilenumbrüche müssen erhalten bleiben,
+  sofern sie nicht ausdrücklich geändert werden sollen.
+- Niemals mehr Code ersetzen als für die gewünschte änderung erforderlich.
+- Große Bereiche oder ganze Dateien dürfen nur ersetzt werden, wenn eine lokale änderung
+  technisch nicht möglich ist.
+- Unabhängige änderungen müssen als separate Aktionen ausgegeben werden.
+- Vor jeder Aktion prüfen, ob dieselbe änderung mit einem kleineren eindeutigen old-Bereich
+  umgesetzt werden kann.
+- Der Benutzer muss keinen Originalcode oder old-Block liefern.
+- ForgeAI darf erforderliche old-Blöcke selbstständig aus dem aktuellen Dateiinhalt ableiten.
 
-Bei create:
-- Verwende einen relativen Pfad innerhalb des ge\u00f6ffneten Projekts.
-- Der Pfad muss eine neue Datei bezeichnen.
+Grundprinzip:
 
-Bei create_directory:
-- Verwende einen relativen Pfad innerhalb des ge\u00f6ffneten Projekts.
+Änderungen müssen immer minimal-invasiv erfolgen. Bevorzuge die kleinste eindeutige
+Ersetzung statt vollständiger Neu-Generierung von Code oder Dateien.
 
-Gib ausschlie\u00dflich valides JSON entsprechend dem vorgegebenen Schema aus.
-Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u00dferhalb des JSON.
+Wichtig:
+
+- Erzeuge niemals einen vollständigen Dateiinhalt als Ersatz, wenn die gewünschte änderung
+  durch eine oder mehrere lokale replace-Aktionen möglich ist.
+- Verwende für old ausschließlich Text, der tatsächlich im aktuellen Dateiinhalt vorhanden ist.
+- Erfinde keinen old-Block aus einer früheren Antwort, Erinnerung oder veralteten Kontextversion.
+- Vom Benutzer ausdrücklich vorgegebener Text muss wörtlich und unverändert übernommen werden.
+- Keine Rechtschreibkorrektur, übersetzung, Normalisierung oder stilistische Verbesserung
+  von ausdrücklich vorgegebenem Text.
+- Text innerhalb von Anführungszeichen ist exakt zu übernehmen.
+- Keine Dateien löschen oder umbenennen.
+- Nur relative Pfade innerhalb des geöffneten Projekts verwenden.
+- Nur freigegebene Dateien oder Verzeichnisse verwenden.
 """
 
     def _prepare_model_changes(self, response: str) -> tuple[str, list[ChangePreview]]:
         """Turn model actions into validated previews without writing any files."""
         project = self.workspace.active_project
-        print("[DEBUG prepare] project=", project)
-        print("[DEBUG prepare] mode=", self.workspace.project_mode())
-
         if not project or self.workspace.project_mode() not in {
-            ProjectMode.WRITE_WITH_CONFIRMATION,
-            ProjectMode.AUTO_WRITE,
+            ProjectMode.WRITE_WITH_CONFIRMATION, ProjectMode.AUTO_WRITE,
         }:
-            print("[DEBUG prepare] EARLY RETURN: project/mode")
             return response, []
-
         visible, previews, errors = extract_change_previews(
-            response,
-            WorkspaceTools(project, self.workspace.filesystem),
+            response, WorkspaceTools(project, self.workspace.filesystem)
         )
-
-        print("[DEBUG prepare] previews=", len(previews))
-        print("[DEBUG prepare] errors=", errors)
-
         permitted_previews: list[ChangePreview] = []
-
         for preview in previews:
             if self._is_ai_control_file(preview.path):
-                errors.append(
-                    f"Die KI-Schreibfunktion selbst darf nicht ver?ndert werden: "
-                    f"{preview.path.name}."
-                )
+                errors.append(f"Die KI-Schreibfunktion selbst darf nicht verändert werden: {preview.path.name}.")
                 continue
-
             permitted_previews.append(preview)
-
-        if (
-            self.workspace.project_mode() == ProjectMode.AUTO_WRITE
-            and permitted_previews
-        ):
-            success, message = self._apply_change_previews(
-                permitted_previews
-            )
+        if self.workspace.project_mode() == ProjectMode.AUTO_WRITE and permitted_previews:
+            success, message = self._apply_change_previews(permitted_previews)
             visible += f"\n\n*{message}*"
             if success:
                 permitted_previews = []
-
         if errors:
-            visible += (
-                "\n\n**Datei?nderung nicht vorbereitet:** "
-                + " | ".join(errors)
-            )
-
+            visible += "\n\n**Dateiänderung nicht vorbereitet:** " + " | ".join(errors)
         return visible, permitted_previews
 
     def _apply_change_previews(self, previews: list[ChangePreview]) -> tuple[bool, str]:
         """Apply user-approved previews through the existing WorkspaceTools gateway."""
-        if previews is self._pending_change_previews:
-            self._pending_change_previews = None
-
         project = self.workspace.active_project
         if not project:
             return False, "Kein Projekt geöffnet."
