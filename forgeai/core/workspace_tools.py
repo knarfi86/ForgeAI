@@ -76,6 +76,74 @@ class WorkspaceTools:
         after = before.replace(old, new, 1)
         return ChangePreview("replace", target, before, after)
 
+    def insert_before(
+        self,
+        path: str | Path,
+        anchor: str,
+        content: str,
+    ) -> ChangePreview:
+        """Create an insert-before preview when anchor matches exactly once."""
+        target = self._path(path)
+        before = self.filesystem.read_text(target)
+
+        if not anchor:
+            raise ValueError(
+                "Der Einfügeanker ('anchor') darf nicht leer sein."
+            )
+
+        match_count = before.count(anchor)
+
+        if match_count == 0:
+            raise ValueError(
+                "Der Einfügeanker wurde nicht gefunden. "
+                "Der 'anchor' muss exakt zum aktuellen Dateiinhalt passen."
+            )
+
+        if match_count > 1:
+            raise ValueError(
+                f"Der Einfügeanker wurde {match_count}-mal gefunden. "
+                "Die Änderung wurde aus Sicherheitsgründen nicht vorbereitet. "
+                "Der 'anchor' muss genau eine Fundstelle haben."
+            )
+
+        position = before.index(anchor)
+        after = before[:position] + content + before[position:]
+        return ChangePreview("insert_before", target, before, after)
+
+    def insert_after(
+        self,
+        path: str | Path,
+        anchor: str,
+        content: str,
+    ) -> ChangePreview:
+        """Create an insert-after preview when anchor matches exactly once."""
+        target = self._path(path)
+        before = self.filesystem.read_text(target)
+
+        if not anchor:
+            raise ValueError(
+                "Der Einfügeanker ('anchor') darf nicht leer sein."
+            )
+
+        match_count = before.count(anchor)
+
+        if match_count == 0:
+            raise ValueError(
+                "Der Einfügeanker wurde nicht gefunden. "
+                "Der 'anchor' muss exakt zum aktuellen Dateiinhalt passen."
+            )
+
+        if match_count > 1:
+            raise ValueError(
+                f"Der Einfügeanker wurde {match_count}-mal gefunden. "
+                "Die Änderung wurde aus Sicherheitsgründen nicht vorbereitet. "
+                "Der 'anchor' muss genau eine Fundstelle haben."
+            )
+
+        position = before.index(anchor) + len(anchor)
+        after = before[:position] + content + before[position:]
+        return ChangePreview("insert_after", target, before, after)
+
     def create_file(self, path: str | Path, content: str = "") -> ChangePreview:
         target = self._path(path)
         if self.filesystem.is_file(target) or self.filesystem.is_directory(target):
@@ -98,7 +166,12 @@ class WorkspaceTools:
         return ChangePreview("delete", target, self.filesystem.read_text(target), "")
 
     def apply(self, preview: ChangePreview, *, confirmed: bool = False) -> None:
-        if preview.operation in {"replace", "create"}:
+        if preview.operation in {
+            "replace",
+            "insert_before",
+            "insert_after",
+            "create",
+        }:
             self.filesystem.write_text(preview.path, preview.after, confirmed=confirmed)
         elif preview.operation == "create_directory":
             self.filesystem.create_directory(preview.path, confirmed=confirmed)

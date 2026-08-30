@@ -51,9 +51,12 @@ def extract_change_previews(
                 "create",
                 "create_directory",
                 "replace",
+                "insert_before",
+                "insert_after",
             }:
                 raise ValueError(
-                    "Nur 'create', 'create_directory' und 'replace' "
+                    "Nur 'create', 'create_directory', 'replace', "
+                    "'insert_before' und 'insert_after' "
                     "sind für KI-Änderungen erlaubt."
                 )
 
@@ -114,6 +117,47 @@ def extract_change_previews(
                         new,
                     )
                 )
+
+            elif operation in {"insert_before", "insert_after"}:
+                anchor = action.get("anchor")
+                content = action.get("content", "")
+
+                if anchor is None:
+                    raise ValueError(
+                        f"Bei '{operation}' fehlt das erforderliche Feld 'anchor'."
+                    )
+
+                if not isinstance(anchor, str):
+                    raise ValueError(
+                        "Das Feld 'anchor' muss ein Text sein."
+                    )
+
+                if not anchor:
+                    raise ValueError(
+                        "Das Feld 'anchor' darf nicht leer sein."
+                    )
+
+                if not isinstance(content, str):
+                    raise ValueError(
+                        "Das Feld 'content' muss ein Text sein."
+                    )
+
+                if operation == "insert_before":
+                    previews.append(
+                        workspace.insert_before(
+                            path,
+                            anchor,
+                            content,
+                        )
+                    )
+                else:
+                    previews.append(
+                        workspace.insert_after(
+                            path,
+                            anchor,
+                            content,
+                        )
+                    )
 
         except (
             KeyError,

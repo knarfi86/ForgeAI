@@ -552,6 +552,8 @@ Regeln:
             "aendern",
             "f\u00fcge",
             "fuege",
+            "erg\u00e4nze",
+            "ergaenze",
             "verbessere",
             "implementiere",
             "ersetze",
@@ -626,6 +628,42 @@ Regeln:
                                     "new",
                                 ],
                             },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "operation": {
+                                        "type": "string",
+                                        "enum": ["insert_before"],
+                                    },
+                                    "path": {"type": "string"},
+                                    "anchor": {"type": "string"},
+                                    "content": {"type": "string"},
+                                },
+                                "required": [
+                                    "operation",
+                                    "path",
+                                    "anchor",
+                                    "content",
+                                ],
+                            },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "operation": {
+                                        "type": "string",
+                                        "enum": ["insert_after"],
+                                    },
+                                    "path": {"type": "string"},
+                                    "anchor": {"type": "string"},
+                                    "content": {"type": "string"},
+                                },
+                                "required": [
+                                    "operation",
+                                    "path",
+                                    "anchor",
+                                    "content",
+                                ],
+                            },
                         ],
                     },
                 },
@@ -657,20 +695,27 @@ Das Format ist immer:
 {
   "actions": [
     {
-      "operation": "replace",
+      "operation": "insert_after",
       "path": "datei.py",
-      "old": "alter Text",
-      "new": "neuer Text"
+      "anchor": "bestehender Code",
+      "content": "neuer Code"
     }
   ]
 }
 
 Erlaubte Operationen:
 - replace: \u00e4ndert einen vorhandenen Bereich einer bestehenden Datei.
+- insert_before: f\u00fcgt neuen Code unmittelbar vor einem eindeutig vorhandenen anchor ein.
+- insert_after: f\u00fcgt neuen Code unmittelbar nach einem eindeutig vorhandenen anchor ein.
 - create: erstellt eine neue Datei.
 - create_directory: erstellt ein neues Verzeichnis.
 
-Bei bestehenden Dateien verwendest du ausschlie\u00dflich replace-Aktionen.
+Bei einer reinen Code-Erg\u00e4nzung in einer bestehenden Datei verwendest du
+insert_before oder insert_after.
+
+Verwende replace nur dann, wenn vorhandener Code tats\u00e4chlich ersetzt oder
+ver\u00e4ndert werden soll.
+
 
 Der Benutzer liefert den Originalcode und die zu ersetzende Textstelle nicht
 notwendigerweise selbst. Wenn der relevante Dateiinhalt bereits im bereitgestellten
@@ -689,6 +734,15 @@ Regeln f\u00fcr jede replace-Aktion:
 - Erfinde niemals Dateiinhalt, der nicht im bereitgestellten Kontext vorhanden ist.
 - Ver\u00e4ndere nur die Dateien, die f\u00fcr die Benutzeranforderung wirklich notwendig sind.
 - Bestehende, bereits korrekte Tests oder Funktionen d\u00fcrfen nicht unn\u00f6tig ersetzt werden.
+
+Regeln f\u00fcr insert_before und insert_after:
+
+- anchor muss exakt und unver\u00e4ndert im aktuell bereitgestellten Dateiinhalt vorkommen.
+- anchor muss ein zusammenh\u00e4ngender Ausschnitt sein.
+- anchor muss genau eine Fundstelle im aktuellen Dateiinhalt haben.
+- Wenn der anchor nicht eindeutig bestimmt werden kann, erstelle keine unsichere Aktion.
+- content enth\u00e4lt ausschlie\u00dflich den neu einzuf\u00fcgenden Code.
+- Verwende keine k\u00fcnstliche replace-Aktion, wenn tats\u00e4chlich nur Code erg\u00e4nzt werden soll.
 
 Bei create:
 - Verwende einen relativen Pfad innerhalb des ge\u00f6ffneten Projekts.
