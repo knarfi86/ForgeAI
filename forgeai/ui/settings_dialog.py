@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QSpinBox
 
 from forgeai.config import Config
-from forgeai.core.ollama_manager import OllamaManager
+from forgeai.ai.ollama_client import OllamaClient
 from forgeai.ui.model_selector import ModelSelector
 
 
@@ -17,8 +17,8 @@ class SettingsDialog(QDialog):
         layout.addRow("Ollama-Adresse", self.url)
 
         # Modell-Auswahl
-        ollama_manager = OllamaManager(ollama_url)
-        models = ollama_manager.list_models()
+        ollama_client = OllamaClient()
+        models = ollama_client.list_models(ollama_url)
         if models:
             self.model_selector = ModelSelector(models, parent=self)
             self.model_selector.model_selected.connect(self._on_model_changed)
