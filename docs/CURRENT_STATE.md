@@ -220,7 +220,9 @@ LLM-Gegenanalyse ergänzt werden.
 Geplant ist:
 
 - konfigurierbare Anzahl von Analyse-Runden
-- Standardwert: 3 Runden
+- Standardwert: 2 Runden
+- Prüfung kann vollständig deaktiviert werden
+- technische Obergrenze: 7 Runden
 - LLM prüft die Basisanalyse
 - erkannte Schwachstellen werden korrigiert
 - die korrigierte Analyse wird erneut geprüft
@@ -251,3 +253,46 @@ Aktuelle produktive Stellen verwenden:
 
 `WorkspaceManager`, `MainWindow`, `SettingsDialog` und `CodeAgent`
 verwenden damit dieselbe zentrale Ollama-Schnittstelle.
+
+## Verifizierter Teststand
+
+Am 2. September 2026 wurde die vollständige lokale Testsuite ausgeführt.
+
+- `compileall`: PASS
+- `git diff --check`: PASS mit Windows-Hinweis zur möglichen LF→CRLF-Umwandlung
+- `pytest`: **111/111 PASS**
+- Laufzeit: 2,59 Sekunden
+- Python: 3.11.9
+- pytest: 9.1.1
+
+Der Teststand bildet die grüne Ausgangsbasis vor der Implementierung des
+mehrstufigen Coding-Agenten.
+
+## Geplanter Coding-Agent-Loop
+
+Der nächste größere Architekturbaustein ist ein kontrollierter Agenten-Loop:
+
+`PLAN`
+→ `REVIEW (optional)`
+→ `REVISE`
+→ `USER APPROVAL`
+→ `EXECUTE`
+→ `TEST`
+→ `ANALYZE`
+→ `REPAIR (optional)`
+→ `REVIEW`
+→ `EXECUTE`
+→ `TEST`
+
+Review und Repair sind unabhängig voneinander konfigurierbar.
+
+Vorgesehene Grenzen:
+
+- Review: Standard `2`, Maximum `7`
+- Repair: Standard `2`, Maximum `7`
+
+Beide Prüfmechanismen können vollständig deaktiviert werden.
+
+Tests bleiben unabhängig davon aktiv.
+
+Dieser Agenten-Loop ist derzeit **noch nicht implementiert**.

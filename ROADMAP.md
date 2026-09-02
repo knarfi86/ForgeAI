@@ -1,4 +1,4 @@
-﻿# Roadmap
+# Roadmap
 
 ## Erledigt
 
@@ -106,7 +106,9 @@ Geplant:
 
 - [ ] LLM-Gegenanalyse auf Basis der deterministischen `ProjectAnalyzer`-Analyse
 - [ ] konfigurierbare Anzahl von Analyse-Runden
-- [ ] Standardwert: 3 Runden
+- [ ] Standardwert: 2 Runden
+- [ ] vollständige Deaktivierung der Prüfung
+- [ ] technische Obergrenze: 7 Runden
 - [ ] LLM prüft und korrigiert die vorherige Analyse
 - [ ] Übergabe der korrigierten Analyse an die nächste Runde
 - [ ] optionaler Modellwechsel zwischen Analyse-Runden
@@ -128,8 +130,8 @@ Die Analyse soll nach dem Prinzip arbeiten:
 → optional anderes Modell
 → konsolidierte Analyse
 
-Die Anzahl der Runden soll nicht fest im Code verdrahtet werden. Der Benutzer
-soll sie über das Einstellungsmenü bestimmen können.
+Die Anzahl der Runden soll nicht fest im Code verdrahtet werden. Der Benutzer soll sie über das Einstellungsmenü bestimmen können.
+Die Prüfung muss außerdem vollständig deaktivierbar sein.
 
 Die Möglichkeit, zwischen den Runden ein anderes Modell einzusetzen, soll
 bewusst unterstützt werden. Unterschiedliche Modelle können unterschiedliche
@@ -138,3 +140,92 @@ Modell seine eigene fehlerhafte Interpretation mehrfach bestätigt.
 
 Die deterministische Analyse bleibt dabei die faktische Grundlage. Das LLM
 liefert zusätzliche Interpretation, Prüfung und Verbesserung.
+
+## Mehrstufiger Coding-Agent
+
+### Zielbild
+
+Der Coding-Agent soll Änderungen nicht nur generieren, sondern deren Lösungsweg
+kritisch prüfen, die Umsetzung verifizieren und bei Fehlern gezielt reparieren.
+
+Der geplante Ablauf lautet:
+
+`PLAN`
+→ `REVIEW`
+→ `REVISE`
+→ `USER APPROVAL`
+→ `EXECUTE`
+→ `TEST`
+→ `ANALYZE`
+→ `REPAIR`
+→ `REVIEW`
+→ `EXECUTE`
+→ `TEST`
+→ ...
+
+### Review
+
+Die Review-Schleife ist optional.
+
+Konfiguration:
+
+- `review_enabled`: Standard `true`
+- `review_max_rounds`: Standard `2`
+- Minimum: `1`
+- Maximum: `7`
+
+Die Schleife endet vorzeitig, sobald der Plan akzeptiert wurde.
+
+Die Review prüft insbesondere Architektur, Anforderungen, Nebenwirkungen,
+Berechtigungen und Testabdeckung.
+
+### Repair
+
+Die Reparaturschleife ist ebenfalls optional.
+
+Konfiguration:
+
+- `repair_enabled`: Standard `true`
+- `repair_max_attempts`: Standard `2`
+- Minimum: `1`
+- Maximum: `7`
+
+Die Reparatur startet nur aufgrund eines konkreten Verifikationsergebnisses.
+
+### Tests
+
+Tests bleiben unabhängig von Review und Repair.
+
+ForgeAI soll mindestens folgende Zustände unterscheiden:
+
+- `PASS`
+- `FAIL`
+- `ERROR`
+- `SKIPPED`
+- `BLOCKED`
+
+Review darf deaktiviert werden, ohne die Tests zu deaktivieren.
+Repair darf ebenfalls unabhängig von den Tests aktiviert oder deaktiviert
+werden.
+
+### Geplante Komponenten
+
+- [ ] Planner für strukturierte Änderungspläne
+- [ ] Review-Komponente für kritische Gegenprüfung
+- [ ] konfigurierbare Review-Runden bis maximal 7
+- [ ] vollständige Deaktivierung der Review
+- [ ] Benutzerfreigabe zwischen Plan und Ausführung
+- [ ] standardisierter Verifikationslauf
+- [ ] Fehleranalyse nach fehlgeschlagenen Tests
+- [ ] Repair-Komponente
+- [ ] konfigurierbare Repair-Versuche bis maximal 7
+- [ ] vollständige Deaktivierung der automatischen Reparatur
+- [ ] erneute Review nach Reparatur
+- [ ] Speicherung von `task_id`, `review_round`, `execution_round`,
+      `repair_attempt` und `git_commit`
+- [ ] Speicherung der Roh-Testberichte
+- [ ] UI für Review-, Test- und Reparaturverlauf
+- [ ] Unterstützung unterschiedlicher Modelle für getrennte Review-Runden
+
+Die Rundengrenzen werden als Konfiguration umgesetzt und nicht fest in die
+einzelnen Agent-Komponenten eingebaut.

@@ -202,7 +202,7 @@ Die geplante Gegenanalyse arbeitet in konfigurierbaren Runden:
    Projektanalyse erstellt.
 
 Die Anzahl der Analyse-Runden soll über die Einstellungen konfigurierbar sein.
-Der geplante Standardwert beträgt drei Runden.
+Der Standardwert beträgt zwei Runden. Die Prüfung kann vollständig deaktiviert werden. Als technische Obergrenze sind sieben Runden vorgesehen.
 
 Ein Modellwechsel zwischen den Runden ist ausdrücklich vorgesehen, damit die
 Analyse nicht ausschließlich von einer einzigen Modellperspektive abhängt.
@@ -254,3 +254,161 @@ Die genaue technische Aufteilung der späteren Review- und Orchestrierungs-
 Komponenten wird erst bei der Implementierung festgelegt. Die Architektur
 soll jedoch sicherstellen, dass deterministische Fakten, LLM-Bewertungen,
 Korrekturen und die finale Konsolidierung getrennt nachvollziehbar bleiben.
+
+## Agenten-Workflow: Planung, Prüfung, Ausführung und Reparatur
+
+Der zukünftige Coding-Agent arbeitet nicht als ungeprüfter Einzelschritt, sondern
+als kontrollierter mehrstufiger Prozess.
+
+Der verbindliche Ablauf ist:
+
+`PLAN`
+→ `REVIEW (optional)`
+→ `REVISE`
+→ `USER APPROVAL`
+→ `EXECUTE`
+→ `TEST`
+→ `ANALYZE`
+→ `REPAIR (optional)`
+→ `REVIEW`
+→ `EXECUTE`
+→ `TEST`
+→ ...
+
+### Planungs- und Review-Schleife
+
+Der Planner erstellt aus der Benutzeranforderung einen konkreten Änderungsplan.
+
+Die optionale Review-Komponente prüft den Plan unabhängig vom eigentlichen
+Schreibvorgang. Bewertet werden insbesondere:
+
+- technische Eignung des vorgeschlagenen Lösungswegs
+- Übereinstimmung mit der Benutzeranforderung
+- betroffene Komponenten und Abhängigkeiten
+- mögliche Nebenwirkungen
+- Sicherheits- und Berechtigungsaspekte
+- Vollständigkeit der vorgesehenen Tests
+
+Eine Review kann folgende Entscheidungen liefern:
+
+- `APPROVE`
+- `REVISE`
+- `REJECT`
+
+Bei `REVISE` wird der Plan überarbeitet und erneut geprüft.
+
+### Review-Konfiguration
+
+Die Prüfung ist vollständig konfigurierbar und kann deaktiviert werden.
+
+Vorgesehene Einstellungen:
+
+- `review_enabled`: `true` oder `false`
+- `review_max_rounds`: Minimum `1`, Standard `2`, Maximum `7`
+
+Das Maximum von sieben Runden ist eine technische Sicherheitsgrenze gegen
+Endlosschleifen. Die tatsächliche Anzahl der Runden endet früher, sobald
+`APPROVE` erreicht wird.
+
+Die Rundenzahl wird nicht fest im Code verdrahtet.
+
+### Ausführung und Verifikation
+
+Nach einer erforderlichen Benutzerbestätigung wird der finale Plan ausgeführt.
+
+Die eigentliche Änderung erfolgt weiterhin ausschließlich über den bestehenden
+kontrollierten Änderungsworkflow:
+
+`ChangePreview`
+→ Benutzerbestätigung
+→ `WorkspaceTools.apply(..., confirmed=True)`
+→ `FileSystem`
+
+Nach der Ausführung folgt die Verifikation.
+
+Tests sind unabhängig von der LLM-Review. Ein erfolgreicher Testlauf beweist,
+dass die konkrete Implementierung die geprüften Tests besteht, ersetzt aber
+nicht die fachliche oder architektonische Prüfung des Lösungswegs.
+
+### Reparaturschleife
+
+Schlagen Tests fehl, kann ForgeAI optional einen Reparaturzyklus starten.
+
+Dabei werden Testergebnis und Fehlerursache analysiert. Daraus entsteht ein
+neuer Reparaturvorschlag, der vor der erneuten Ausführung wiederum geprüft
+werden kann.
+
+Vorgesehene Einstellungen:
+
+- `repair_enabled`: `true` oder `false`
+- `repair_max_attempts`: Minimum `1`, Standard `2`, Maximum `7`
+
+Auch hier gilt: Das Maximum von sieben ist eine Sicherheitsgrenze. Der Zyklus
+endet früher, wenn die Tests erfolgreich sind oder keine sinnvolle Reparatur
+mehr möglich ist.
+
+### Unabhängigkeit der Schleifen
+
+Review, Repair und Test bilden drei getrennte Verantwortlichkeiten:
+
+- **Review** bewertet den Lösungsweg und dessen Qualität.
+- **Repair** reagiert auf konkrete Verifikationsfehler.
+- **Test** bewertet die tatsächlich ausgeführte Implementierung.
+
+Dadurch kann beispielsweise die LLM-Review deaktiviert werden, während die
+automatische Testausführung weiterhin aktiv bleibt.
+
+Ebenso kann die automatische Reparatur deaktiviert werden, ohne die Tests
+abzuschalten.
+
+### Nachvollziehbarkeit
+
+Jeder Agentenlauf soll mindestens folgende Kennungen und Zustände nachvollziehbar
+speichern:
+
+- `task_id`
+- `review_round`
+- `execution_round`
+- `repair_attempt`
+- `git_commit`
+- Teststatus
+
+Vorgesehene Teststatus:
+
+- `PASS`
+- `FAIL`
+- `ERROR`
+- `SKIPPED`
+- `BLOCKED`
+
+Die Rohdaten der Testausführung sollen für spätere Analyse und Reparatur
+erhalten bleiben.
+
+### Geplanter Verantwortungszuschnitt
+
+`Planner`
+→ erstellt den Änderungsplan
+
+`Review`
+→ bewertet den Plan und fordert bei Bedarf eine Überarbeitung
+
+`Approval`
+→ erhält die explizite Benutzerfreigabe
+
+`Executor`
+→ erzeugt bzw. verarbeitet die Änderungsvorschläge
+
+`Verifier`
+→ führt reproduzierbare Prüfungen und Tests aus
+
+`Repair`
+→ analysiert Fehler und erzeugt einen neuen Reparaturvorschlag
+
+`WorkspaceTools`
+→ erzeugt und verarbeitet kontrollierte Änderungsvorschauen
+
+`FileSystem`
+→ führt ausschließlich autorisierte tatsächliche Schreibvorgänge aus
+
+Der Planner, Reviewer und Repairer dürfen nicht direkt Projektdateien schreiben.
+Der tatsächliche Schreibzugriff bleibt zentral kontrolliert.
