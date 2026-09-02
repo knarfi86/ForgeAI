@@ -2,9 +2,9 @@
 
 ## Git
 
-- Branch: `forgeai-dev`
-- Referenz-Commit: `87c3bb9`
-- Commit: `refactor: consolidate Ollama client architecture`
+- Branch: `temp/agent-workflow-current`
+- Referenz-Commit: `cbd658c`
+- Commit: `TEMP: current agent workflow state`
 - Repository: `knarfi86/ForgeAI`
 
 ## Aktueller Funktionsstand
@@ -260,7 +260,7 @@ Am 2. September 2026 wurde die vollständige lokale Testsuite erfolgreich ausgef
 
 - `compileall`: PASS
 - `git diff --check`: PASS
-- `pytest`: **199/199 PASS**
+- `pytest`: **207/207 PASS**
 - Python: 3.11.9
 - pytest: 9.1.1
 
@@ -271,9 +271,10 @@ ProjectAnalyzer und FileIndexer.
 
 ## Agentenstatus
 
-Der Planungs- und Review-Rahmen ist implementiert.
+Der Planungs- und Review-Rahmen umfasst inzwischen auch die
+Verifikation, Fehleranalyse und Reparaturplanung.
 
-Dazu gehören:
+Implementiert sind:
 
 - `ModelRouter`
 - `AgentState` und `AgentRun`
@@ -281,20 +282,33 @@ Dazu gehören:
 - `AgentPlanner`
 - `AgentReviewer`
 - `AgentOrchestrator`
+- `AgentVerificationWorker`
+- `AgentAnalyzer`
+- `AgentRepairer`
+- `ANALYZING`-Zustand
+- `REPAIRING`-Zustand
+- Reparaturplan-Review
+- erneute Reparaturversuche nach `REVISE`
+- Abbruch bei `REJECT`
+- Übergang eines akzeptierten Reparaturplans zur Benutzerfreigabe
+- Begrenzung der Reparaturversuche über `AgentRun`
 - optionaler externer Planner als rein beratende Quelle
 
-Der aktuelle nächste technische Schritt ist die Kopplung des Agentenrahmens
-an den bestehenden Änderungs- und Testworkflow:
+Der aktuelle Recovery-Ablauf ist:
 
 `AgentPlan`
+→ Review
 → `ChangePreview`
 → Benutzerbestätigung
 → `WorkspaceTools.apply`
 → Tests
 → Fehleranalyse
-→ Repair-Vorschlag
+→ Reparaturplan
 → Review
+→ ggf. weiterer Reparaturversuch
 → erneute Ausführung
 
-Die vollständige automatische Ausführung, Verifikation und Reparaturschleife
-ist noch nicht implementiert.
+Die vollständige End-to-End-Kopplung des Agentenplans mit dem bestehenden
+Änderungsworkflow und der automatischen Ausführung ist noch nicht
+abgeschlossen. Die einzelnen Recovery-Komponenten und die
+Reparatur-Review-Schleife sind jedoch implementiert und getestet.

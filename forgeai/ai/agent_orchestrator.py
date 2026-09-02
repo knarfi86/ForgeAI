@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from .agent_analyzer import AgentAnalyzer, RepairAnalysis
 from .agent_contracts import AgentPlan, AgentTask, ReviewDecision, ReviewResult
@@ -112,7 +112,7 @@ class AgentOrchestrator:
         self,
         review_result: ReviewResult | None = None,
     ) -> AgentState:
-        """Verarbeitet die Entscheidung eines Reviews.
+        """Verarbeitet die Entscheidung eines normalen Plan-Reviews.
 
         APPROVE führt zur Freigabe bzw. Ausführung.
         REVISE führt zurück zur Planungsphase.
@@ -136,15 +136,7 @@ class AgentOrchestrator:
             return self.request_approval()
 
         if result.decision == ReviewDecision.REVISE:
-            self.run.revision_context.append(
-                {
-                    "review_round": self.run.review_round,
-                    "decision": result.decision.value,
-                    "findings": list(result.findings),
-                    "required_changes": list(result.required_changes),
-                    "rationale": result.rationale,
-                }
-            )
+            self._store_revision_context(result)
             self.run.transition(AgentState.PLANNING)
             return self.run.state
 
@@ -155,7 +147,62 @@ class AgentOrchestrator:
             f"Unbekannte Review-Entscheidung: {result.decision!r}"
         )
 
-    def request_approval(self) -> AgentState:
+    def handle_repair_review_result(
+        self,
+        review_result: ReviewResult | None = None,
+    ) -> AgentState:
+        """Verarbeitet die Entscheidung eines Reparaturplan-Reviews.
+
+        APPROVE führt zur Freigabe bzw. Ausführung.
+        REVISE startet einen weiteren Reparaturversuch.
+        REJECT beendet den Lauf als abgebrochen.
+        """
+        result = review_result or self.current_review
+
+        if result is None:
+            raise RuntimeError(
+                "Es liegt kein ReviewResult zur Verarbeitung vor."
+            )
+
+        if not isinstance(result, ReviewResult):
+            raise ValueError(
+                "Ungültiges ReviewResult."
+            )
+
+        self.current_review = result
+
+        if result.decision == ReviewDecision.APPROVE:
+            return self.request_approval()
+
+        if result.decision == ReviewDecision.REVISE:
+            self._store_revision_context(result)
+            return self.begin_repair()
+
+        if result.decision == ReviewDecision.REJECT:
+            return self.abort()
+
+        raise ValueError(
+            f"Unbekannte Review-Entscheidung: {result.decision!r}"
+        )
+
+    def _store_revision_context(
+        self,
+        result: ReviewResult,
+    ) -> None:
+        """Speichert Review-Feedback für die nächste Planungsrunde."""
+        self.run.revision_context.append(
+            {
+                "review_round": self.run.review_round,
+                "decision": result.decision.value,
+                "findings": list(result.findings),
+                "required_changes": list(result.required_changes),
+                "rationale": result.rationale,
+            }
+        )
+
+    def request_approval(
+        self,
+    ) -> AgentState:
         """Wechselt in den Freigabestatus, falls eine Freigabe nötig ist."""
         if not self.require_user_approval:
             return self.begin_execution()
@@ -248,6 +295,7 @@ class AgentOrchestrator:
             task,
             repair_analysis,
             project_context,
+            revision_context=self.run.revision_context,
         )
         self.current_review = None
         return self.current_plan

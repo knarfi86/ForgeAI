@@ -249,7 +249,7 @@ class AgentRecoveryWorker(QThread):
                     self.project_context,
                 )
 
-                state = self.orchestrator.handle_review_result(review)
+                state = self.orchestrator.handle_repair_review_result(review)
 
                 if state == AgentState.ABORTED:
                     findings = (
@@ -261,11 +261,7 @@ class AgentRecoveryWorker(QThread):
                         f"{findings}"
                     )
 
-                if state == AgentState.PLANNING:
-                    plan = self.orchestrator.plan(
-                        self.task,
-                        self.project_context,
-                    )
+                if state == AgentState.REPAIRING:
                     continue
 
                 break
