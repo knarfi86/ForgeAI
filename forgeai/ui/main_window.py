@@ -378,10 +378,7 @@ class MainWindow(QMainWindow):
             self._response_failed("Keine Ollama-Antwort erhalten.")
             return
 
-        if self._stream_is_action:
-            raw_content = self.worker.content
-        else:
-            raw_content = self.chat_view.pending.content if self.chat_view.pending else ""
+        raw_content = self.worker.content
 
         if self._stream_is_action:
             content, previews = self._prepare_model_changes(raw_content)
