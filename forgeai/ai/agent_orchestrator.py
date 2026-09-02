@@ -1,7 +1,9 @@
 ﻿from __future__ import annotations
 
+from .agent_analyzer import AgentAnalyzer, RepairAnalysis
 from .agent_contracts import AgentPlan, AgentTask, ReviewDecision, ReviewResult
 from .agent_planner import AgentPlanner
+from .agent_repairer import AgentRepairer
 from .agent_reviewer import AgentReviewer
 from .agent_state import AgentRun, AgentState
 
@@ -10,7 +12,7 @@ class AgentOrchestrator:
     """Steuert den Lebenszyklus eines Agentenlaufs.
 
     Der Orchestrator steuert ausschließlich den Ablauf.
-    Planung, Review, Ausführung und Prüfung werden über getrennte
+    Planung, Review, Analyse, Reparatur und Ausführung werden über getrennte
     Komponenten angebunden.
     """
 
@@ -20,16 +22,22 @@ class AgentOrchestrator:
         *,
         planner: AgentPlanner | None = None,
         reviewer: AgentReviewer | None = None,
+        analyzer: AgentAnalyzer | None = None,
+        repairer: AgentRepairer | None = None,
         review_enabled: bool = True,
         require_user_approval: bool = True,
     ) -> None:
         self.run = run
         self.planner = planner
         self.reviewer = reviewer
+        self.analyzer = analyzer
+        self.repairer = repairer
         self.review_enabled = review_enabled
         self.require_user_approval = require_user_approval
         self.current_plan: AgentPlan | None = None
         self.current_review: ReviewResult | None = None
+        self.current_analysis: RepairAnalysis | None = None
+        self.last_test_output: str = ""
 
     def start(self) -> AgentState:
         """Startet einen neuen Agentenlauf mit der Planungsphase."""
@@ -63,6 +71,7 @@ class AgentOrchestrator:
             project_context,
             revision_context=self.run.revision_context,
         )
+        self.current_review = None
         return self.current_plan
 
     def begin_review(self) -> AgentState:
@@ -178,10 +187,70 @@ class AgentOrchestrator:
         self.run.transition(AgentState.ANALYZING)
         return self.run.state
 
+    def analyze(
+        self,
+        task: AgentTask,
+        test_output: str,
+        project_context: str = "",
+    ) -> RepairAnalysis:
+        """Analysiert den aktuellen fehlgeschlagenen Verifikationslauf."""
+        if self.run.state != AgentState.ANALYZING:
+            raise RuntimeError(
+                "Analyse ist nur im Zustand 'analyzing' möglich."
+            )
+
+        if self.analyzer is None:
+            raise RuntimeError(
+                "Für diesen Agentenlauf wurde kein AgentAnalyzer konfiguriert."
+            )
+
+        self.last_test_output = test_output
+
+        self.current_analysis = self.analyzer.analyze(
+            task,
+            test_output,
+            project_context,
+            current_plan=self.current_plan,
+        )
+        return self.current_analysis
+
     def begin_repair(self) -> AgentState:
         """Startet einen Reparaturversuch."""
         self.run.start_repair()
         return self.run.state
+
+    def repair(
+        self,
+        task: AgentTask,
+        project_context: str = "",
+        analysis: RepairAnalysis | None = None,
+    ) -> AgentPlan:
+        """Erzeugt aus der Fehleranalyse einen neuen Reparaturplan."""
+        if self.run.state != AgentState.REPAIRING:
+            raise RuntimeError(
+                "Reparaturplanung ist nur im Zustand 'repairing' möglich."
+            )
+
+        if self.repairer is None:
+            raise RuntimeError(
+                "Für diesen Agentenlauf wurde kein AgentRepairer konfiguriert."
+            )
+
+        repair_analysis = analysis or self.current_analysis
+
+        if repair_analysis is None:
+            raise RuntimeError(
+                "Für die Reparatur wurde noch keine Fehleranalyse erstellt."
+            )
+
+        self.current_analysis = repair_analysis
+        self.current_plan = self.repairer.repair(
+            task,
+            repair_analysis,
+            project_context,
+        )
+        self.current_review = None
+        return self.current_plan
 
     def complete(self) -> AgentState:
         """Beendet einen erfolgreichen Lauf."""
