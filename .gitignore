@@ -23,3 +23,8 @@ Thumbs.db
 # Logs
 *.log
 .aider*
+
+# Test reports
+test_reports/
+
+# Test reports

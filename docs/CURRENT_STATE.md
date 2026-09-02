@@ -256,43 +256,45 @@ verwenden damit dieselbe zentrale Ollama-Schnittstelle.
 
 ## Verifizierter Teststand
 
-Am 2. September 2026 wurde die vollständige lokale Testsuite ausgeführt.
+Am 2. September 2026 wurde die vollständige lokale Testsuite erfolgreich ausgeführt.
 
 - `compileall`: PASS
-- `git diff --check`: PASS mit Windows-Hinweis zur möglichen LF→CRLF-Umwandlung
-- `pytest`: **111/111 PASS**
-- Laufzeit: 2,59 Sekunden
+- `git diff --check`: PASS
+- `pytest`: **199/199 PASS**
 - Python: 3.11.9
 - pytest: 9.1.1
 
-Der Teststand bildet die grüne Ausgangsbasis vor der Implementierung des
-mehrstufigen Coding-Agenten.
+Die Tests umfassen unter anderem Agent Contracts, Agent State, Agent Planner,
+Agent Reviewer, Agent Orchestrator, ModelRouter, OllamaProvider, OllamaClient,
+AIContextProvider, WorkspaceManager, WorkspaceTools, FileSystem,
+ProjectAnalyzer und FileIndexer.
 
-## Geplanter Coding-Agent-Loop
+## Agentenstatus
 
-Der nächste größere Architekturbaustein ist ein kontrollierter Agenten-Loop:
+Der Planungs- und Review-Rahmen ist implementiert.
 
-`PLAN`
-→ `REVIEW (optional)`
-→ `REVISE`
-→ `USER APPROVAL`
-→ `EXECUTE`
-→ `TEST`
-→ `ANALYZE`
-→ `REPAIR (optional)`
-→ `REVIEW`
-→ `EXECUTE`
-→ `TEST`
+Dazu gehören:
 
-Review und Repair sind unabhängig voneinander konfigurierbar.
+- `ModelRouter`
+- `AgentState` und `AgentRun`
+- `AgentTask`, `AgentPlan` und `ReviewResult`
+- `AgentPlanner`
+- `AgentReviewer`
+- `AgentOrchestrator`
+- optionaler externer Planner als rein beratende Quelle
 
-Vorgesehene Grenzen:
+Der aktuelle nächste technische Schritt ist die Kopplung des Agentenrahmens
+an den bestehenden Änderungs- und Testworkflow:
 
-- Review: Standard `2`, Maximum `7`
-- Repair: Standard `2`, Maximum `7`
+`AgentPlan`
+→ `ChangePreview`
+→ Benutzerbestätigung
+→ `WorkspaceTools.apply`
+→ Tests
+→ Fehleranalyse
+→ Repair-Vorschlag
+→ Review
+→ erneute Ausführung
 
-Beide Prüfmechanismen können vollständig deaktiviert werden.
-
-Tests bleiben unabhängig davon aktiv.
-
-Dieser Agenten-Loop ist derzeit **noch nicht implementiert**.
+Die vollständige automatische Ausführung, Verifikation und Reparaturschleife
+ist noch nicht implementiert.
