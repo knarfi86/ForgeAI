@@ -69,7 +69,7 @@ class WorkspaceTools:
         if match_count > 1:
             raise ValueError(
                 f"Der zu ersetzende Text wurde {match_count}-mal gefunden. "
-                "Die ?nderung wurde aus Sicherheitsgr?nden nicht vorbereitet. "
+                "Die Änderung wurde aus Sicherheitsgründen nicht vorbereitet. "
                 "Der 'old'-Block muss genau eine Fundstelle haben."
             )
 

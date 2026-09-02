@@ -229,8 +229,8 @@ class MainWindow(QMainWindow):
         count = len(chat_ids)
         answer = QMessageBox.question(
             self,
-            "Chats l?schen",
-            f"Sollen {count} ausgew?hlte Chats wirklich gel?scht werden?",
+            "Chats löschen",
+            f"Sollen {count} ausgewählte Chats wirklich gelöscht werden?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -260,8 +260,8 @@ class MainWindow(QMainWindow):
 
         answer = QMessageBox.question(
             self,
-            "Alle Chats l?schen",
-            "Sollen wirklich ALLE Chats inklusive ihrer Nachrichten gel?scht werden?",
+            "Alle Chats löschen",
+            "Sollen wirklich ALLE Chats inklusive ihrer Nachrichten gelöscht werden?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -299,9 +299,9 @@ class MainWindow(QMainWindow):
 
             success, message = self._apply_change_previews(previews)
             status_title = (
-                "?nderungen angewendet"
+                "Änderungen angewendet"
                 if success
-                else "?nderungen nicht angewendet"
+                else "Änderungen nicht angewendet"
             )
             result_message = f"**{status_title}:** {message}"
 
@@ -612,6 +612,7 @@ class MainWindow(QMainWindow):
         self.input_bar.set_busy(True)
         self.worker.start()
 
+    def _response_done(self) -> None:
         if not self.worker:
             self._response_failed("Keine Ollama-Antwort erhalten.")
             return
@@ -627,7 +628,11 @@ class MainWindow(QMainWindow):
             self.chat_view.pending.set_content(content)
 
         if content and self.chat_id is not None:
-            self.history.add_message(self.chat_id, "assistant", content)
+            self.history.add_message(
+                self.chat_id,
+                "assistant",
+                content,
+            )
 
         self.input_bar.set_busy(False)
         self.refresh_chats()
@@ -640,7 +645,6 @@ class MainWindow(QMainWindow):
             )
 
         self._stream_is_action = False
-
     @staticmethod
     def _is_change_confirmation(request: str) -> bool:
         """Detect explicit chat confirmations for the currently pending preview."""
@@ -727,37 +731,37 @@ class MainWindow(QMainWindow):
     def _analysis_instructions() -> str:
         return """
 ANALYSEMODUS:
-Die aktuelle Benutzeranfrage verlangt eine Analyse und keine Datei?nderung.
+Die aktuelle Benutzeranfrage verlangt eine Analyse und keine DateiÄnderung.
 
 WICHTIG:
-Die nachfolgende Systemnachricht enth?lt die aktuell f?r die KI freigegebenen
-Projektdateien. Diese Dateien sind der verf?gbare Projektkontext und sollen direkt
+Die nachfolgende Systemnachricht enthält die aktuell für die KI freigegebenen
+Projektdateien. Diese Dateien sind der verfügbare Projektkontext und sollen direkt
 analysiert werden.
 
-Frage den Benutzer NICHT erneut nach dem Dateiinhalt, wenn die ben?tigte Datei bereits
+Frage den Benutzer NICHT erneut nach dem Dateiinhalt, wenn die benötigte Datei bereits
 im bereitgestellten Kontext enthalten ist.
 
-Wenn ein Projekt oder mehrere Projektdateien ?berpr?ft werden sollen:
+Wenn ein Projekt oder mehrere Projektdateien überprüft werden sollen:
 - Analysiere die bereitgestellten Dateien direkt.
-- Beurteile nur den tats?chlich bereitgestellten Code.
+- Beurteile nur den tatsächlich bereitgestellten Code.
 - Benenne konkrete, im bereitgestellten Code nachweisbare Fehler.
-- Unterscheide echte Fehler klar von m?glichen Verbesserungen.
-- Wenn f?r eine vollst?ndige Aussage eine bestimmte Datei fehlt, nenne konkret welche Datei
+- Unterscheide echte Fehler klar von möglichen Verbesserungen.
+- Wenn für eine vollständige Aussage eine bestimmte Datei fehlt, nenne konkret welche Datei
   im bereitgestellten Kontext fehlt.
 - Behaupte niemals, dass kein Projektkontext vorhanden ist, wenn Dateien im Kontext
   bereitgestellt wurden.
 
 Regeln:
-- Keine Dateien ?ndern.
+- Keine Dateien ändern.
 - Keine JSON-actions ausgeben.
 - Keine ChangePreview erzeugen.
-- Keine ausf?hrbaren Datei?nderungsbefehle ausgeben.
+- Keine ausführbaren Dateiänderungsbefehle ausgeben.
 - Keine "hier ist der Befehl zum Kopieren"-Antwort erzeugen.
 - Nur den vorhandenen Code analysieren.
-- Tats?chlich vorhandene Probleme von blo?en Verbesserungsvorschl?gen unterscheiden.
+- Tatsächlich vorhandene Probleme von bloßen Verbesserungsvorschlägen unterscheiden.
 - Behaupte keine Funktionen, Klassen, Imports oder Codeprobleme, die im bereitgestellten
   Dateiinhalt nicht nachweisbar sind.
-- Wenn eine m?gliche Verbesserung genannt wird, klar als Vorschlag kennzeichnen.
+- Wenn eine mögliche Verbesserung genannt wird, klar als Vorschlag kennzeichnen.
 """
 
     def _action_response_format(self, request: str) -> dict | None:
@@ -1016,7 +1020,7 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
         for preview in previews:
             if self._is_ai_control_file(preview.path):
                 errors.append(
-                    f"Die KI-Schreibfunktion selbst darf nicht ver?ndert werden: "
+                    f"Die KI-Schreibfunktion selbst darf nicht verändert werden: "
                     f"{preview.path.name}."
                 )
                 continue
@@ -1036,7 +1040,7 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
 
         if errors:
             visible += (
-                "\n\n**Datei?nderung nicht vorbereitet:** "
+                "\n\n**DateiÄnderung nicht vorbereitet:** "
                 + " | ".join(errors)
             )
 

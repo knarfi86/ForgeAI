@@ -76,6 +76,14 @@ class AgentWorkflowWorker(QThread):
                 )
                 state = orchestrator.handle_review_result(review)
 
+                if state == AgentState.ABORTED:
+                    findings = "; ".join(review.findings) or "Keine weiteren Angaben."
+                    raise RuntimeError(f"Reviewer hat den Agentenplan abgelehnt: {findings}")
+
+                if state == AgentState.ABORTED:
+                    findings = "; ".join(review.findings) or "Keine weiteren Angaben."
+                    raise RuntimeError(f"Reviewer hat den Agentenplan abgelehnt: {findings}")
+
                 if state == AgentState.PLANNING:
                     continue
 

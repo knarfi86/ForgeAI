@@ -33,7 +33,7 @@ def extract_change_previews(
             action_sources = []
 
     except json.JSONDecodeError as error:
-        return visible_response, [], [f"Ung?ltige JSON-Antwort: {error}"]
+        return visible_response, [], [f"Ungültige JSON-Antwort: {error}"]
 
     for source in action_sources:
         try:

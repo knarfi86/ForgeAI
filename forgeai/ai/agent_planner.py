@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from typing import Any
@@ -150,6 +150,10 @@ class AgentPlanner:
             )
 
         for change in proposed_changes:
+            allowed_actions = {"create", "create_directory", "replace", "insert_before", "insert_after"}
+            if change.get("action") not in allowed_actions:
+                raise ValueError("Planner benötigt ein gültiges 'action'-Feld mit einer unterstützten Dateioperation.")
+
             if not isinstance(change, dict):
                 raise ValueError(
                     "Jede geplante Änderung muss ein JSON-Objekt sein."
