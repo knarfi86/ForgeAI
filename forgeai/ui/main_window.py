@@ -1,15 +1,22 @@
 """Composition root for ForgeAI's desktop interface."""
 
 import base64
+import json
 import logging
+import uuid
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QFileDialog, QLabel, QMainWindow, QMessageBox, QSplitter, QToolBar,
     QVBoxLayout, QWidget,
 )
 
+from forgeai.ai.agent_contracts import AgentTask
+from forgeai.ai.agent_orchestrator import AgentOrchestrator
+from forgeai.ai.agent_state import AgentState
+from forgeai.ai.agent_ui_worker import AgentWorkflowWorker
 from forgeai.ai.change_actions import extract_change_previews
 from forgeai.ai.ollama_client import OllamaClient
 from forgeai.ai.prompts import SYSTEM_PROMPT
@@ -56,6 +63,13 @@ class MainWindow(QMainWindow):
         self.worker = None
         self.chat_id: int | None = None
         self._pending_user_request = ""
+        self._agent_worker: AgentWorkflowWorker | None = None
+        self._agent_orchestrator: AgentOrchestrator | None = None
+        self._agent_task: AgentTask | None = None
+        self._agent_plan = None
+        self._agent_project_context = ""
+        self._agent_num_ctx: int | None = None
+        self.agent_review_enabled = self._setting("agent_review_enabled", "true").casefold() not in {"0", "false", "off", "no"}
         self._stream_is_action = False
         self._pending_change_previews = None
         self.ollama_url = Config.LOCAL_OLLAMA_URL
@@ -119,12 +133,20 @@ class MainWindow(QMainWindow):
         self.git_status = QLabel("Git: –")
         self.file_status = QLabel("Dateien: 0")
         self.workspace_status = QLabel("Workspace: lokal")
+        self.agent_status = QLabel("Agent: bereit")
         self.index_status = QLabel("Index: bereit")
-        for label in (self.workspace_status, self.project_status, self.index_status, self.backend_status, self.ollama_status, self.model_status, self.git_status, self.file_status):
+        for label in (self.workspace_status, self.agent_status, self.project_status, self.index_status, self.backend_status, self.ollama_status, self.model_status, self.git_status, self.file_status):
             self.statusBar().addPermanentWidget(label)
         self._update_status()
 
     def _build_menus(self) -> None:
+        agent_menu = self.menuBar().addMenu("Agent")
+        self.agent_review_action = QAction("Plan & Review aktiv", self)
+        self.agent_review_action.setCheckable(True)
+        self.agent_review_action.setChecked(self.agent_review_enabled)
+        self.agent_review_action.triggered.connect(self._set_agent_review_enabled)
+        agent_menu.addAction(self.agent_review_action)
+
         file_menu = self.menuBar().addMenu("Datei")
         file_menu.addAction("Projekt öffnen", self.choose_project)
         file_menu.addAction("Projekt schließen", self.close_project)
@@ -262,6 +284,11 @@ class MainWindow(QMainWindow):
         if self.worker and self.worker.isRunning() or self.chat_id is None:
             return
 
+        if self._stream_is_action or self._is_change_request(text):
+            project_context = self._build_agent_project_context()
+            self._start_agent_workflow(text, project_context)
+            return
+
         if self._pending_change_previews and self._is_change_confirmation(text):
             self.history.add_message(self.chat_id, "user", text)
             self.chat_view.add_message("user", text)
@@ -373,7 +400,218 @@ class MainWindow(QMainWindow):
         self.input_bar.set_busy(True)
         self.worker.start()
 
-    def _response_done(self) -> None:
+    def _set_agent_review_enabled(self, enabled: bool) -> None:
+        self.agent_review_enabled = bool(enabled)
+        self.agent_status.setText(
+            "Agent: Plan & Review aktiv" if enabled else "Agent: Review aus"
+        )
+        self._save_setting("agent_review_enabled", "true" if enabled else "false")
+
+    def _is_change_request(self, request: str) -> bool:
+        normalized = request.casefold().strip()
+        analysis_markers = (
+            "analysiere", "analyse", "prüfe", "untersuche",
+            "erkläre", "zeige mir", "warum", "was macht",
+        )
+        change_markers = (
+            "ändere", "aendere", "bearbeite", "ersetze",
+            "ergänze", "ergaenze", "füge hinzu", "fuege hinzu",
+            "schreibe", "erstelle", "lösche", "loesche",
+            "verschiebe", "rename", "umbenenne",
+            "ändere die datei", "aendere die datei",
+        )
+        if any(marker in normalized for marker in change_markers):
+            return True
+        return False if any(marker in normalized for marker in analysis_markers) else False
+
+    def _build_agent_project_context(self) -> str:
+        model_context_length = self.ollama.get_context_length(
+            self.ollama_url,
+            self.model,
+        ) or 32_768
+        context_plan = self.ollama.recommend_context_length(
+            self.ollama_url,
+            self.model,
+            model_context_length,
+        )
+        num_ctx = context_plan["recommended_context"]
+        project_context_tokens = max(4_096, int(num_ctx * 0.55))
+        per_file_tokens = max(
+            2_048,
+            min(project_context_tokens // 2, 8_192),
+        )
+        context, included_files = self.ai_context.build(
+            self.workspace.active_project,
+            max_context_tokens=project_context_tokens,
+            max_file_tokens=per_file_tokens,
+            exclude_noise=True,
+        )
+        self._agent_num_ctx = num_ctx
+        self._agent_project_context = context or ""
+        self.logger.info(
+            "Agent context: files=%s, project_context_tokens=%s, per_file_tokens=%s",
+            len(included_files),
+            project_context_tokens,
+            per_file_tokens,
+        )
+        return self._agent_project_context
+
+    def _set_agent_status(self, text: str) -> None:
+        self.agent_status.setText(f"Agent: {text}")
+
+    def _start_agent_workflow(self, request: str, project_context: str) -> None:
+        if self.chat_id is None:
+            return
+
+        self.history.add_message(self.chat_id, "user", request)
+        self._pending_user_request = request
+        self._agent_project_context = project_context
+        self._agent_task = AgentTask(
+            task_id=uuid.uuid4().hex,
+            user_request=request,
+            project_path=(
+                str(self.workspace.active_project.path)
+                if self.workspace.active_project
+                else None
+            ),
+        )
+        self.chat_view.add_message("user", request)
+        self.chat_view.add_message("assistant", "")
+        self.input_bar.set_busy(True)
+        self._set_agent_status("plane")
+
+        self._agent_worker = AgentWorkflowWorker(
+            task=self._agent_task,
+            project_context=project_context,
+            model=self.model,
+            base_url=self.ollama_url,
+            review_enabled=self.agent_review_enabled,
+            parent=self,
+        )
+        self._agent_worker.completed.connect(self._agent_workflow_finished)
+        self._agent_worker.failed.connect(self._agent_workflow_failed)
+        self._agent_worker.start()
+
+    def _agent_workflow_failed(self, error: str) -> None:
+        self.input_bar.set_busy(False)
+        self._set_agent_status("Fehler")
+        if self.chat_view.pending:
+            self.chat_view.pending.set_content(
+                f"**Agent-Fehler:** {error}"
+            )
+        self.logger.error("Agent workflow failed: %s", error)
+
+    def _agent_workflow_finished(
+        self,
+        orchestrator: AgentOrchestrator,
+        task: AgentTask,
+        plan,
+    ) -> None:
+        self._agent_worker = None
+        self._agent_orchestrator = orchestrator
+        self._agent_task = task
+        self._agent_plan = plan
+
+        changes = []
+        for change in plan.proposed_changes:
+            action = change.get("action", "unbekannt")
+            path = change.get("path", "")
+            description = change.get("description", "")
+            changes.append(
+                f"- {action} {path}: {description}"
+            )
+
+        plan_message = (
+            f"### Agent-Plan\n\n"
+            f"**Zusammenfassung:** {plan.summary}\n\n"
+            f"**Geplante Änderungen:**\n"
+            + ("\n".join(changes) if changes else "- Keine konkreten Änderungen")
+            + f"\n\n**Begründung:** {plan.rationale}"
+        )
+
+        self._set_agent_status("Freigabe erforderlich")
+        self.input_bar.set_busy(False)
+
+        if self.chat_view.pending:
+            self.chat_view.pending.set_content(plan_message)
+
+        if self.chat_id is not None:
+            self.history.add_message(
+                self.chat_id,
+                "assistant",
+                plan_message,
+            )
+
+        answer = QMessageBox.question(
+            self,
+            "Agentenplan freigeben",
+            (
+                "Der Agent hat Planung und Review abgeschlossen.\n\n"
+                f"{plan.summary}\n\n"
+                "Sollen die geplanten Änderungen ausgeführt werden?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+
+        if answer != QMessageBox.StandardButton.Yes:
+            orchestrator.abort()
+            self._set_agent_status("abgebrochen")
+            return
+
+        orchestrator.approve()
+        self._set_agent_status("führe Plan aus")
+        self._start_agent_coder_stream()
+
+    def _start_agent_coder_stream(self) -> None:
+        if self.chat_id is None or self._agent_plan is None:
+            return
+
+        plan_json = json.dumps(
+            {
+                "summary": self._agent_plan.summary,
+                "proposed_changes": self._agent_plan.proposed_changes,
+                "rationale": self._agent_plan.rationale,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+
+        system_content = (
+            SYSTEM_PROMPT
+            + self._change_action_instructions()
+            + "\n\nDu arbeitest jetzt auf Basis dieses freigegebenen Agentenplans."
+            + "\nDer Plan ist verbindlich. Setze ihn über die vorhandenen "
+            + "strukturierten Dateiaktionen um.\n\n"
+            + "AGENT_PLAN:\n"
+            + plan_json
+        )
+
+        if self._agent_project_context:
+            system_content += "\n\nPROJECT_CONTEXT:\n" + self._agent_project_context
+
+        messages = [{"role": "system", "content": system_content}]
+        messages += [
+            {"role": row["role"], "content": row["content"]}
+            for row in self.history.messages(self.chat_id)
+        ]
+
+        self.chat_view.add_message("assistant", "")
+        self._pending_change_previews = None
+        self._stream_is_action = True
+
+        self.worker = self.ollama.stream_chat(
+            self.ollama_url,
+            self.model,
+            messages,
+            self._action_response_format(self._pending_user_request),
+            num_ctx=self._agent_num_ctx,
+        )
+        self.worker.completed.connect(self._response_done)
+        self.worker.failed.connect(self._response_failed)
+        self.input_bar.set_busy(True)
+        self.worker.start()
+
         if not self.worker:
             self._response_failed("Keine Ollama-Antwort erhalten.")
             return
