@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from forgeai.ai.agent_contracts import AgentTask
 from forgeai.ai.agent_state import AgentRun, AgentState
 
 
@@ -119,9 +120,28 @@ class AgentIdentity:
 class TaskReality:
     task_id: str
     user_request: str
-    project_path: str
+    project_path: str | None
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime | None = None
+
+    @classmethod
+    def from_agent_task(
+        cls,
+        task: AgentTask,
+        *,
+        created_at: datetime | None = None,
+    ) -> TaskReality:
+        """Creates a Reality projection from the authoritative AgentTask."""
+        if not isinstance(task, AgentTask):
+            raise TypeError("task must be an AgentTask instance.")
+
+        return cls(
+            task_id=task.task_id,
+            user_request=task.user_request,
+            project_path=task.project_path,
+            metadata=dict(task.metadata),
+            created_at=created_at,
+        )
 
 
 @dataclass
@@ -334,6 +354,49 @@ class AgentEvent:
 
 @dataclass
 class AgentReality:
+    @classmethod
+    def from_task_and_run(
+        cls,
+        task: AgentTask,
+        run: AgentRun,
+        *,
+        agent_id: str,
+        provider: str,
+        model: str,
+        role: str,
+        run_id: str,
+        created_at: datetime | None = None,
+    ) -> AgentReality:
+        """Creates a Reality view from the authoritative task and run objects."""
+        if not isinstance(task, AgentTask):
+            raise TypeError("task must be an AgentTask instance.")
+        if not isinstance(run, AgentRun):
+            raise TypeError("run must be an AgentRun instance.")
+
+        identity = AgentIdentity(
+            agent_id=agent_id,
+            provider=provider,
+            model=model,
+            role=role,
+            created_at=created_at or utc_now(),
+        )
+
+        task_reality = TaskReality.from_agent_task(
+            task,
+            created_at=created_at,
+        )
+        run_reality = RunReality.from_agent_run(
+            run,
+            run_id=run_id,
+        )
+
+        return cls(
+            identity=identity,
+            task=task_reality,
+            run=run_reality,
+        )
+
+
     """
     Structured runtime view of the current agent reality.
 

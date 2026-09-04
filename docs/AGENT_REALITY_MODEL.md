@@ -739,3 +739,23 @@ Damit gilt weiterhin:
 
 Die Projection ist somit ein Adapter zwischen dem bestehenden
 Agentenlaufzeitmodell und dem zukünftigen gemeinsamen Reality Context.
+
+## AgentTask- und AgentRun-Projection
+
+Der Reality Layer besitzt nun Projektionen für die beiden zentralen
+Laufzeitobjekte `AgentTask` und `AgentRun`.
+
+- `TaskReality.from_agent_task()` bildet `AgentTask` ab.
+- `RunReality.from_agent_run()` bildet `AgentRun` ab.
+- `AgentReality.from_task_and_run()` erzeugt daraus die gemeinsame
+  Reality-Sicht.
+
+Die Projektionen übernehmen nur die für die Reality-Sicht benötigten Daten.
+Metadata, History und Revision Context werden kopiert, sodass die Projection
+keine direkte Mutation der autoritativen Laufzeitobjekte ermöglicht.
+
+Die Ownership bleibt damit unverändert:
+
+`AgentTask / AgentRun = Runtime Authority`
+
+`TaskReality / RunReality / AgentReality = Reality Projection`

@@ -376,3 +376,24 @@ Die Reality-Projektion verändert dadurch den ursprünglichen `AgentRun` nicht.
 
 Die bestehende Ownership bleibt erhalten:
 `AgentRun` ist weiterhin autoritativ für den Laufzeitstatus.
+
+### AgentTask- und AgentRun-Projection
+
+Der Reality Layer kann nun sowohl `AgentTask` als auch `AgentRun` strukturiert
+abbilden.
+
+`TaskReality.from_agent_task()` erzeugt eine Projection aus dem autoritativen
+`AgentTask`.
+
+`RunReality.from_agent_run()` erzeugt eine Projection aus dem autoritativen
+`AgentRun`.
+
+`AgentReality.from_task_and_run()` verbindet beide Projektionen mit einer
+`AgentIdentity` zu einer gemeinsamen Reality-Sicht.
+
+Dabei bleibt `AgentTask` bzw. `AgentRun` jeweils die autoritative Quelle.
+Die erzeugten Reality-Objekte sind Projektionen und ver?ndern die
+Ausgangsobjekte nicht.
+
+`TaskReality.project_path` beh?lt die Semantik von `AgentTask.project_path`
+bei und bleibt daher optional (`str | None`).

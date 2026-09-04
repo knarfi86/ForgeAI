@@ -442,3 +442,22 @@ Die Verantwortung wird nicht verschoben:
 
 Damit bleibt der Reality Layer eine Integrationsschicht und wird nicht zur
 zweiten Zustandsverwaltung.
+
+## AgentTask, AgentRun und AgentReality
+
+Der Reality Layer bildet die beiden zentralen Laufzeitobjekte über dedizierte
+Projection-Methoden ab:
+
+`TaskReality.from_agent_task()`
+
+`RunReality.from_agent_run()`
+
+`AgentReality.from_task_and_run()`
+
+`AgentTask` und `AgentRun` bleiben dabei die autoritativen Quellen.
+`AgentReality` übernimmt keine Ownership des bestehenden Task- oder
+Laufzeitstatus.
+
+Die Projection ist bewusst getrennt von den Ausgangsobjekten. Kopierte
+Metadata-, History- und Revision-Context-Strukturen verhindern, dass eine
+Änderung an der Reality-Sicht den autoritativen Agentenlauf verändert.
