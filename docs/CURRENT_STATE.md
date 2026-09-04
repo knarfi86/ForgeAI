@@ -411,21 +411,54 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 ### Reality-Layer-Event-Projektion
 
 <!-- FORGE:AUTO:CURRENT_STATE:START -->
-### Automatisch gepflegter Projektstand
+### Automatisch synchronisierter Arbeitsstand
 
-Die folgenden Fakten werden direkt aus dem Repository ermittelt:
+#### Aktuell geänderte Dateien
 
-- Pytest-Testfaelle: **229**
-- Agent Reality Datenmodell: **implementiert**
-- Reality-State-Events: **implementiert**
-- AgentOrchestrator-Reality-Anbindung: **vorhanden**
-- Encoding-Gate: `scripts/check_encoding.py` **vorhanden**
-- Automatische Doku-Pflege: **vorhanden**
-- Automatisierter Test-Runner: **vorhanden**
+- `forgeai/ui/main_window.py`
+- `scripts/update_docs.py`
+- `tests/test_doc_tools.py`
+- `tests/test_update_docs.py`
 
-Dieser Abschnitt beschreibt den technisch belegbaren Stand.
-Architekturentscheidungen, Begr?ndungen und strategische Planung
-bleiben in den manuell gepflegten Abschnitten erhalten.
+#### Teststand
+
+- Pytest-Testfaelle: **230**
+
+#### Aktueller Plan
+
+- vollständige Tests für `create`
+- vollständige Tests für `create_directory`
+- vollständige Tests für `replace`
+- Tests für nicht freigegebene Pfade
+- Tests für Session-Freigaben
+- Tests für bestätigte und nicht bestätigte Schreibvorgänge
+- Tests für Projektwechsel und das Löschen von Session-Freigaben
+- detaillierte Git-Änderungsansicht
+- verbesserte Diff-Darstellung
+- klare Zuordnung zwischen vorgeschlagener und tatsächlich angewendeter Änderung
+- interaktive Bearbeitung von Projektdateien
+- berechtigungsgeprüfte Änderungen
+- konsistente Verbindung zwischen Editor, ChangePreview und WorkspaceTools
+- detaillierte Benutzeroberfläche zur Pflege und Auswertung des Projektwissens
+- bessere Darstellung von Projektstruktur und Abhängigkeiten
+- lokale Projektanalyse als optionaler, klar abgegrenzter Prozess
+- weitere Optimierung des Analyse-Kontexts
+- bessere Kontrolle über Analyseumfang und Kontextbudget
+- weitere Werkzeuge für Lesen, Suchen und Analysieren
+- konsequente Beachtung des jeweiligen Projektmodus
+- klare Trennung zwischen Lesezugriff, Änderungsvorschlag und Schreibzugriff
+
+#### Letzte relevante Commits
+
+- `c24021d (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) chore: automate documentation synchronization`
+- `bf80286 chore: automate encoding checks`
+- `bbea66e feat: integrate reality events with orchestrator`
+- `35c2d2d feat: record agent reality state events`
+- `20096a5 feat: project task and run into agent reality`
+
+Dieser Abschnitt wird automatisch aus dem lokalen Git- und Teststand
+sowie aus der aktuellen ROADMAP.md erzeugt.
+Manuell gepflegte Dokumentation außerhalb dieses Blocks bleibt erhalten.
 <!-- FORGE:AUTO:CURRENT_STATE:END -->
 
 `AgentReality.record_run_state()` kann den aktuellen autoritativen

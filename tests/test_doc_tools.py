@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 from scripts.doc_tools import replace_marked_block, write_utf8
 
@@ -6,7 +6,7 @@ from scripts.doc_tools import replace_marked_block, write_utf8
 def test_write_utf8_uses_utf8_without_bom_and_lf(tmp_path: Path):
     target = tmp_path / "docs.md"
 
-    write_utf8(target, "Zeile 1\nZeile 2\n")
+    write_utf8(target, "Zeile 1\r\nZeile 2\r\n")
 
     raw = target.read_bytes()
 
@@ -22,7 +22,7 @@ def test_replace_marked_block_replaces_only_marked_section(tmp_path: Path):
         target,
         """Vorher
 <!-- FORGE:START -->
-Alter Stand: ?berholt
+Alter Stand: überholt
 <!-- FORGE:END -->
 Nachher
 """,
@@ -32,13 +32,13 @@ Nachher
         target,
         "<!-- FORGE:START -->",
         "<!-- FORGE:END -->",
-        "Neuer Stand: ge?ndert",
+        "Neuer Stand: geändert",
     )
 
     content = target.read_text(encoding="utf-8")
 
-    assert "Alter Stand: ?berholt" not in content
-    assert "Neuer Stand: ge?ndert" in content
+    assert "Alter Stand: überholt" not in content
+    assert "Neuer Stand: geändert" in content
     assert content.startswith("Vorher\n")
     assert content.endswith("Nachher\n")
 
@@ -91,4 +91,4 @@ def test_replace_marked_block_requires_markers(tmp_path: Path):
     except RuntimeError as exc:
         assert "Start marker not found" in str(exc)
     else:
-        raise AssertionError("Fehlender Anchor wurde nicht erkannt.")
+        raise AssertionError("Fehlender Marker wurde nicht erkannt.")

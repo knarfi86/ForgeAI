@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from doc_tools import write_utf8
+from doc_tools import replace_marked_block
 
 
 def run(command: list[str]) -> str:
@@ -18,7 +18,7 @@ def run(command: list[str]) -> str:
         encoding="utf-8",
         check=True,
     )
-    return result.stdout.strip()
+    return result.stdout.rstrip(chr(13)+chr(10))
 
 
 def count_tests() -> int:
@@ -40,214 +40,158 @@ def count_tests() -> int:
     return 0
 
 
-def exists(relative_path: str) -> bool:
-    return (ROOT / relative_path).exists()
-
-
-def has_text(relative_path: str, needle: str) -> bool:
-    path = ROOT / relative_path
-
-    if not path.exists():
-        return False
-
-    return needle in path.read_text(encoding="utf-8")
-
-
-def replace_block(
-    path: Path,
-    start_marker: str,
-    end_marker: str,
-    body: str,
-    anchor: str,
-) -> None:
-    content = path.read_text(encoding="utf-8")
-
-    block = (
-        start_marker
-        + "\n"
-        + body.rstrip()
-        + "\n"
-        + end_marker
+def get_changed_files() -> list[str]:
+    output = run(
+        [
+            "git",
+            "status",
+            "--short",
+            "--untracked-files=all",
+        ]
     )
 
-    start = content.find(start_marker)
-    end = content.find(end_marker)
+    ignored = {
+        'ARCHITECTURE.md',
+        'docs/CURRENT_STATE.md',
+    }
 
-    if start >= 0 and end >= start:
-        end += len(end_marker)
-        updated = content[:start] + block + content[end:]
-    else:
-        anchor_pos = content.find(anchor)
+    files = []
 
-        if anchor_pos < 0:
-            raise RuntimeError(
-                f"Anchor nicht gefunden in {path}: {anchor!r}"
-            )
+    for line in output.splitlines():
+        if not line:
+            continue
 
-        insert_at = anchor_pos + len(anchor)
+        if len(line) >= 4:
+            path = line[3:].rstrip()
+            if path not in ignored:
+                files.append(path)
 
-        updated = (
-            content[:insert_at]
-            + "\n\n"
-            + block
-            + content[insert_at:]
-        )
+    return files
 
-    if updated != content:
-        write_utf8(path, updated)
+
+def get_recent_commits(limit: int = 5) -> list[str]:
+    output = run(
+        [
+            "git",
+            "log",
+            f"-{limit}",
+            "--oneline",
+            "--decorate",
+        ]
+    )
+
+    return output.splitlines() if output else []
+
+
+def get_current_plan() -> list[str]:
+    roadmap = ROOT / "ROADMAP.md"
+
+    if not roadmap.exists():
+        return ["- ROADMAP.md nicht gefunden."]
+
+    content = roadmap.read_text(encoding="utf-8")
+
+    lines = content.splitlines()
+    plan = []
+
+    capture = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped.startswith("## Nächste Ausbaustufen"):
+            capture = True
+            continue
+
+        if capture and stripped.startswith("## "):
+            break
+
+        if capture and stripped.startswith("- "):
+            plan.append(stripped)
+
+    if not plan:
+        return ["- Aktueller Plan ist in ROADMAP.md dokumentiert."]
+
+    return plan
+
+
+def build_changed_files_section(files: list[str]) -> str:
+    if not files:
+        return "- Keine uncommitteten Änderungen."
+
+    return "\n".join(f"- `{path}`" for path in files)
+
+
+def build_history_section(commits: list[str]) -> str:
+    if not commits:
+        return "- Keine Git-Historie verfügbar."
+
+    return "\n".join(f"- `{commit}`" for commit in commits)
+
+
+def build_plan_section(plan: list[str]) -> str:
+    return "\n".join(plan)
 
 
 tests = count_tests()
+changed_files = get_changed_files()
+recent_commits = get_recent_commits()
+current_plan = get_current_plan()
 
-reality_model = exists("forgeai/core/agent_reality.py")
-orchestrator = exists("forgeai/ai/agent_orchestrator.py")
-reality_events = (
-    reality_model
-    and has_text(
-        "forgeai/core/agent_reality.py",
-        "def record_run_state(",
-    )
-)
-orchestrator_reality = (
-    orchestrator
-    and has_text(
-        "forgeai/ai/agent_orchestrator.py",
-        "self.reality",
-    )
-)
-encoding_gate = exists("scripts/check_encoding.py")
-doc_tools = exists("scripts/doc_tools.py")
-doc_sync = exists("scripts/update_docs.py")
-test_runner = exists("scripts/run_tests.ps1")
+current_state_body = """### Automatisch synchronisierter Arbeitsstand
 
-current_state_items = [
-    "- Pytest-Testfaelle: **%d**" % tests,
-]
+#### Aktuell geänderte Dateien
 
-if reality_model:
-    current_state_items.append(
-        "- Agent Reality Datenmodell: **implementiert**"
-    )
+""" + build_changed_files_section(changed_files) + """
 
-if reality_events:
-    current_state_items.append(
-        "- Reality-State-Events: **implementiert**"
-    )
+#### Teststand
 
-if orchestrator_reality:
-    current_state_items.append(
-        "- AgentOrchestrator-Reality-Anbindung: **vorhanden**"
-    )
+- Pytest-Testfaelle: **%d**
 
-if encoding_gate:
-    current_state_items.append(
-        "- Encoding-Gate: `scripts/check_encoding.py` **vorhanden**"
-    )
+#### Aktueller Plan
 
-if doc_tools and doc_sync:
-    current_state_items.append(
-        "- Automatische Doku-Pflege: **vorhanden**"
-    )
+""" % tests + build_plan_section(current_plan) + """
 
-if test_runner:
-    current_state_items.append(
-        "- Automatisierter Test-Runner: **vorhanden**"
-    )
+#### Letzte relevante Commits
 
-current_state_body = """### Automatisch gepflegter Projektstand
+""" + build_history_section(recent_commits) + """
 
-Die folgenden Fakten werden direkt aus dem Repository ermittelt:
-
-""" + "\n".join(current_state_items) + """
-
-Dieser Abschnitt beschreibt den technisch belegbaren Stand.
-Architekturentscheidungen, Begr?ndungen und strategische Planung
-bleiben in den manuell gepflegten Abschnitten erhalten.
+Dieser Abschnitt wird automatisch aus dem lokalen Git- und Teststand
+sowie aus der aktuellen ROADMAP.md erzeugt.
+Manuell gepflegte Dokumentation außerhalb dieses Blocks bleibt erhalten.
 """
 
-reality_items = []
+architecture_body = """### Automatische Änderungsübersicht
 
-if reality_model:
-    reality_items.append(
-        "- `AgentReality`-Datenmodell: implementiert"
-    )
+#### Aktuell betroffene Dateien
 
-if reality_events:
-    reality_items.append(
-        "- `AgentReality.record_run_state()`: implementiert"
-    )
+""" + build_changed_files_section(changed_files) + """
 
-if orchestrator_reality:
-    reality_items.append(
-        "- `AgentOrchestrator` kann Reality-State-Events aufzeichnen"
-    )
+#### Letzte relevante Commits
 
-reality_items.append(
-    "- Automatisch ermittelte Testbasis: **%d Testfaelle**" % tests
-)
+""" + build_history_section(recent_commits) + """
 
-reality_body = """### Automatisch ermittelter Implementierungsstand
-
-""" + "\n".join(reality_items) + """
-
-Die Eintr\u00e4ge dieses Abschnitts werden aus dem vorhandenen Code- und
-Testbestand abgeleitet. Manuelle Architektur- und Modellentscheidungen
-werden nicht \u00fcberschrieben.
+Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
+Architekturentscheidungen und Begründungen bleiben in den manuell
+gepflegten Abschnitten von ARCHITECTURE.md erhalten.
 """
 
-architecture_items = [
-    "- `AgentRun` bleibt die autoritative Laufzeitinstanz.",
-]
-
-if reality_model:
-    architecture_items.append(
-        "- Der Reality Layer bildet den Laufzeitstatus strukturiert ab."
-    )
-
-if reality_events:
-    architecture_items.append(
-        "- Runtime-Zustands\u00e4nderungen k\u00f6nnen als `AgentEvent` beobachtet werden."
-    )
-
-if orchestrator_reality:
-    architecture_items.append(
-        "- Der Orchestrator kann Reality-Beobachtungen optional aufzeichnen."
-    )
-
-architecture_body = """### Automatischer Reality-Status
-
-""" + "\n".join(architecture_items) + """
-
-Diese automatische Zusammenfassung enth\u00e4lt nur aus dem Repository
-ableitbare technische Fakten.
-"""
-
-replace_block(
+replace_marked_block(
     ROOT / "docs" / "CURRENT_STATE.md",
     "<!-- FORGE:AUTO:CURRENT_STATE:START -->",
     "<!-- FORGE:AUTO:CURRENT_STATE:END -->",
     current_state_body,
-    "### Reality-Layer-Event-Projektion",
 )
 
-replace_block(
-    ROOT / "docs" / "AGENT_REALITY_MODEL.md",
-    "<!-- FORGE:AUTO:REALITY_MODEL:START -->",
-    "<!-- FORGE:AUTO:REALITY_MODEL:END -->",
-    reality_body,
-    "## AgentRun-Projection",
-)
-
-replace_block(
+replace_marked_block(
     ROOT / "ARCHITECTURE.md",
     "<!-- FORGE:AUTO:ARCHITECTURE:START -->",
     "<!-- FORGE:AUTO:ARCHITECTURE:END -->",
     architecture_body,
-    "## AgentRun und RunReality",
 )
 
 print("ForgeAI-Dokumentation synchronisiert.")
+print(f"Geänderte Dateien: {len(changed_files)}")
 print(f"Pytest-Testfaelle: {tests}")
-print(f"Reality Model: {'ja' if reality_model else 'nein'}")
-print(f"Reality Events: {'ja' if reality_events else 'nein'}")
-print(f"Orchestrator-Reality: {'ja' if orchestrator_reality else 'nein'}")
+print(f"Commits erfasst: {len(recent_commits)}")
+print(f"Planpunkte erfasst: {len(current_plan)}")

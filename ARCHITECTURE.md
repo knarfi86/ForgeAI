@@ -429,15 +429,26 @@ Die erste technische Implementierung befindet sich in
 ## AgentRun und RunReality
 
 <!-- FORGE:AUTO:ARCHITECTURE:START -->
-### Automatischer Reality-Status
+### Automatische Änderungsübersicht
 
-- `AgentRun` bleibt die autoritative Laufzeitinstanz.
-- Der Reality Layer bildet den Laufzeitstatus strukturiert ab.
-- Runtime-Zustandsänderungen können als `AgentEvent` beobachtet werden.
-- Der Orchestrator kann Reality-Beobachtungen optional aufzeichnen.
+#### Aktuell betroffene Dateien
 
-Diese automatische Zusammenfassung enthält nur aus dem Repository
-ableitbare technische Fakten.
+- `forgeai/ui/main_window.py`
+- `scripts/update_docs.py`
+- `tests/test_doc_tools.py`
+- `tests/test_update_docs.py`
+
+#### Letzte relevante Commits
+
+- `c24021d (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) chore: automate documentation synchronization`
+- `bf80286 chore: automate encoding checks`
+- `bbea66e feat: integrate reality events with orchestrator`
+- `35c2d2d feat: record agent reality state events`
+- `20096a5 feat: project task and run into agent reality`
+
+Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
+Architekturentscheidungen und Begründungen bleiben in den manuell
+gepflegten Abschnitten von ARCHITECTURE.md erhalten.
 <!-- FORGE:AUTO:ARCHITECTURE:END -->
 
 `AgentRun` bleibt der autoritative Laufzeitanker des Agentenworkflows.
