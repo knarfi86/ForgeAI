@@ -195,15 +195,24 @@ class AgentPlanner:
             )
 
         for change in proposed_changes:
-            allowed_actions = {"create", "create_directory", "replace", "insert_before", "insert_after"}
-            if change.get("action") not in allowed_actions:
-                raise ValueError("Planner benötigt ein gültiges 'action'-Feld mit einer unterstützten Dateioperation.")
-
             if not isinstance(change, dict):
                 raise ValueError(
                     "Jede geplante Änderung muss ein JSON-Objekt sein."
                 )
 
+            allowed_actions = {
+                "create",
+                "create_directory",
+                "replace",
+                "insert_before",
+                "insert_after",
+            }
+
+            if change.get("action") not in allowed_actions:
+                raise ValueError(
+                    "Planner benötigt ein gültiges 'action'-Feld "
+                    "mit einer unterstützten Dateioperation."
+                )
             for field in ("action", "path", "description"):
                 value = change.get(field)
                 if not isinstance(value, str) or not value.strip():

@@ -418,18 +418,15 @@ Die erste technische Implementierung befindet sich in
 
 - `forgeai/ai/agent_planner.py`
 - `forgeai/ai/agent_reviewer.py`
-- `forgeai/ai/ollama_client.py`
-- `forgeai/ui/main_window.py`
-- `tests/test_agent_planner.py`
 - `tests/test_update_docs.py`
 
 #### Letzte relevante Commits
 
-- `2c11acb (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: refine chat prompt routing`
+- `d5f58d3 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: stabilize agent JSON workflow`
+- `2c11acb fix: refine chat prompt routing`
 - `3ff6c12 chore: refine automatic documentation synchronization`
 - `c24021d chore: automate documentation synchronization`
 - `bf80286 chore: automate encoding checks`
-- `bbea66e feat: integrate reality events with orchestrator`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell

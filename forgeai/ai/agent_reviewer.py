@@ -102,6 +102,13 @@ class AgentReviewer:
                 "}",
                 "",
                 'decision darf ausschließlich "approve", "revise" oder "reject" sein.',
+                "",
+                "Entscheidungsregeln:",
+                '- "approve": Der Plan ist fachlich und technisch plausibel, ausreichend vollständig und ohne wesentliche erkennbare Probleme ausführbar.',
+                '- "revise": Der Plan enthält konkrete technische, architektonische, fachliche, sicherheitsrelevante, testbezogene oder vollständigkeitsbezogene Probleme, die durch eine Überarbeitung des Plans korrigiert werden können.',
+                '- "reject": Der vorgeschlagene Ansatz ist grundsätzlich ungeeignet, widersprüchlich oder nicht sinnvoll ausführbar. Verwende "reject" nicht für normale technische Fehler oder fehlende Details, die der Planner konkret korrigieren kann.',
+                "",
+                'Wenn konkrete Korrekturen möglich sind, verwende bevorzugt "revise" und beschreibe sie nachvollziehbar in findings und required_changes.',
             ]
         )
 
