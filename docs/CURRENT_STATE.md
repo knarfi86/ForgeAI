@@ -398,6 +398,16 @@ Ausgangsobjekte nicht.
 `TaskReality.project_path` behält die Semantik von `AgentTask.project_path`
 bei und bleibt daher optional (`str | None`).
 
+### AgentOrchestrator-Reality-Anbindung
+
+`AgentOrchestrator` kann optional eine `AgentReality`-Instanz erhalten.
+Nach relevanten Zustandsübergängen wird der autoritative `AgentRun` an
+`AgentReality.record_run_state()` übergeben und dadurch als `AgentEvent`
+aufgezeichnet.
+
+Damit bleibt `AgentRun` die Runtime Authority, während der Reality Layer
+eine zeitliche Beobachtung der Workflow-Zustände führt.
+
 ### Reality-Layer-Event-Projektion
 
 `AgentReality.record_run_state()` kann den aktuellen autoritativen

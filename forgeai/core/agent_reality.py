@@ -359,33 +359,54 @@ class AgentReality:
         *,
         phase: str,
         actor: RealitySource = RealitySource.ORCHESTRATOR,
+        run: AgentRun | None = None,
     ) -> AgentEvent:
-        "Record the current authoritative AgentRun state as a Reality event."
-        if self.run.state is None:
-            raise ValueError("AgentRun state must not be None.")
+        "Record the current run state as a Reality event."
 
-        state_after = self.run.state.value
+        if run is not None and not isinstance(run, AgentRun):
+            raise TypeError("run must be an AgentRun instance.")
+
+        observed_run = run if run is not None else self.run
+
+        if observed_run.state is None:
+            raise ValueError("Agent run state must not be None.")
+
+        state_after = observed_run.state.value
 
         state_before = None
         if self.events:
             previous = self.events[-1]
             state_before = previous.state_after
 
+        task_id = (
+            observed_run.task_id
+            if isinstance(observed_run, AgentRun)
+            else self.task.task_id
+        )
+
         event = AgentEvent(
             event_id=f"{self.run.run_id}:state:{len(self.events) + 1}",
             event_type=EventType.STATE_CHANGED,
-            task_id=self.task.task_id,
+            task_id=task_id,
             run_id=self.run.run_id,
             actor=actor,
             phase=phase,
             state_before=state_before,
             state_after=state_after,
             payload={
-                "review_round": self.run.review_round,
-                "execution_round": self.run.execution_round,
-                "repair_attempt": self.run.repair_attempt,
+                "review_round": observed_run.review_round,
+                "execution_round": observed_run.execution_round,
+                "repair_attempt": observed_run.repair_attempt,
             },
         )
+
+        if isinstance(observed_run, AgentRun):
+            self.run = RunReality.from_agent_run(
+                observed_run,
+                run_id=self.run.run_id,
+                started_at=self.run.started_at,
+                finished_at=self.run.finished_at,
+            )
 
         self.events.append(event)
         return event

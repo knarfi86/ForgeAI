@@ -6,6 +6,7 @@ from .agent_planner import AgentPlanner
 from .agent_repairer import AgentRepairer
 from .agent_reviewer import AgentReviewer
 from .agent_state import AgentRun, AgentState
+from forgeai.core.agent_reality import AgentReality, RealitySource
 
 
 class AgentOrchestrator:
@@ -26,6 +27,7 @@ class AgentOrchestrator:
         repairer: AgentRepairer | None = None,
         review_enabled: bool = True,
         require_user_approval: bool = True,
+        reality: AgentReality | None = None,
     ) -> None:
         self.run = run
         self.planner = planner
@@ -34,10 +36,28 @@ class AgentOrchestrator:
         self.repairer = repairer
         self.review_enabled = review_enabled
         self.require_user_approval = require_user_approval
+        self.reality = reality
         self.current_plan: AgentPlan | None = None
         self.current_review: ReviewResult | None = None
         self.current_analysis: RepairAnalysis | None = None
         self.last_test_output: str = ""
+
+    def attach_reality(self, reality: AgentReality) -> None:
+        "Attach the Reality projection used for runtime observations."
+        if not isinstance(reality, AgentReality):
+            raise TypeError("reality must be an AgentReality instance.")
+        self.reality = reality
+
+    def _record_reality_state(self, phase: str) -> None:
+        "Record the current AgentRun state when Reality is attached."
+        if self.reality is None:
+            return
+
+        self.reality.record_run_state(
+            phase=phase,
+            actor=RealitySource.ORCHESTRATOR,
+            run=self.run,
+        )
 
     def start(self) -> AgentState:
         """Startet einen neuen Agentenlauf mit der Planungsphase."""
@@ -48,6 +68,7 @@ class AgentOrchestrator:
             )
 
         self.run.transition(AgentState.PLANNING)
+        self._record_reality_state("planning")
         return self.run.state
 
     def plan(
@@ -80,6 +101,7 @@ class AgentOrchestrator:
             return self.run.state
 
         self.run.start_review()
+        self._record_reality_state("review")
         return self.run.state
 
     def review(
@@ -208,6 +230,7 @@ class AgentOrchestrator:
             return self.begin_execution()
 
         self.run.transition(AgentState.APPROVAL_REQUIRED)
+        self._record_reality_state("approval")
         return self.run.state
 
     def approve(self) -> AgentState:
@@ -222,16 +245,19 @@ class AgentOrchestrator:
     def begin_execution(self) -> AgentState:
         """Startet eine Ausführungsrunde."""
         self.run.start_execution()
+        self._record_reality_state("execution")
         return self.run.state
 
     def begin_testing(self) -> AgentState:
         """Startet die Verifikation nach einer Ausführung."""
         self.run.transition(AgentState.TESTING)
+        self._record_reality_state("testing")
         return self.run.state
 
     def begin_analysis(self) -> AgentState:
         """Startet die Fehleranalyse nach einem fehlgeschlagenen Test."""
         self.run.transition(AgentState.ANALYZING)
+        self._record_reality_state("analysis")
         return self.run.state
 
     def analyze(
@@ -264,6 +290,7 @@ class AgentOrchestrator:
     def begin_repair(self) -> AgentState:
         """Startet einen Reparaturversuch."""
         self.run.start_repair()
+        self._record_reality_state("repair")
         return self.run.state
 
     def repair(
@@ -303,14 +330,17 @@ class AgentOrchestrator:
     def complete(self) -> AgentState:
         """Beendet einen erfolgreichen Lauf."""
         self.run.complete()
+        self._record_reality_state("completed")
         return self.run.state
 
     def fail(self) -> AgentState:
         """Markiert den Lauf als endgültig fehlgeschlagen."""
         self.run.fail()
+        self._record_reality_state("failed")
         return self.run.state
 
     def abort(self) -> AgentState:
         """Bricht den Lauf ab."""
         self.run.abort()
+        self._record_reality_state("aborted")
         return self.run.state

@@ -272,7 +272,14 @@ AgentPlan
 → erneute Ausführung
 ```
 
-Der `AgentOrchestrator` besitzt bereits Zustandsmethoden für Ausführung, Test, Analyse und Repair, aber der aktuelle `AgentWorkflowWorker` führt praktisch nur Planung und Review bis zur Freigabe durch. Die eigentliche End-to-End-Ausführungs-, Verifikations- und Reparaturschleife ist noch nicht vollständig verdrahtet.
+Der `AgentOrchestrator` besitzt Zustandsmethoden für Planung, Review, Approval,
+Execution, Testing, Analysis und Repair und ist inzwischen optional an den
+Reality Layer angebunden. Zustandsübergänge können dabei als `AgentEvent`
+aufgezeichnet werden.
+
+Die vollständige End-to-End-Ausführungs-, Verifikations- und Reparaturschleife
+des `AgentWorkflowWorker` ist davon unabhängig weiterhin ein eigener
+Integrationsschritt.
 
 Der aktuelle Worker enthält außerdem noch eine doppelte identische `ABORTED`-Prüfung. Das ist ein Codequalitätsdetail und kein Bestandteil des Reality Models.
 
@@ -714,10 +721,16 @@ Verifikationszyklus.
 
 ### Aktueller Implementierungsstand
 
-Die Datenstruktur ist implementiert und durch 4 Unit-Tests abgesichert.
-Die Anbindung an AgentRun, AgentOrchestrator, AIContextProvider,
-WorkspaceManager und AgentVerificationWorker folgt schrittweise und ist
-noch nicht Bestandteil dieses Basisschnitts.
+Der Reality-Layer-Datenmodellkern, die `AgentTask`-/`AgentRun`-Projektionen
+und die Reality-State-Events sind implementiert und durch 18 Core-Tests
+abgesichert.
+
+`AgentRun` ist bereits über `RunReality.from_agent_run()` angebunden.
+`AgentOrchestrator` kann optional eine `AgentReality`-Instanz erhalten und
+relevante Zustandsübergänge als `AgentEvent` erfassen.
+
+Die weitere Anbindung von `AIContextProvider`, `WorkspaceManager` und
+`AgentVerificationWorker` folgt schrittweise.
 
 ## AgentRun-Projection
 
