@@ -213,25 +213,6 @@ interpretierenden Bewertung des LLM getrennt.
 
 ### Geplante Analysearchitektur
 
-`ProjectAnalyzer`
-→ erstellt strukturelle Basisanalyse
-
-`AIContextProvider`
-→ stellt gezielt freigegebene Projektinformationen als Kontext bereit
-
-`OllamaClient`
-→ kommuniziert mit den lokalen LLMs
-
-`LLM Analysis / Review`
-→ prüft und korrigiert die Analyse
-
-`ForgeBrain`
-→ speichert die konsolidierte Analyse
-
-Die genaue technische Aufteilung der späteren Review-Komponente wird erst bei
-der Implementierung festgelegt.
-### Geplante Analysearchitektur
-
 ProjectAnalyzer
 → erstellt die deterministische strukturelle Basisanalyse
 
@@ -411,7 +392,9 @@ erhalten bleiben.
 → führt ausschließlich autorisierte tatsächliche Schreibvorgänge aus
 
 Der Planner, Reviewer und Repairer dürfen nicht direkt Projektdateien schreiben.
-Der tatsächliche Schreibzugriff bleibt zentral kontrolliert.\n\n## Agent Reality Layer
+Der tatsächliche Schreibzugriff bleibt zentral kontrolliert.
+
+## Agent Reality Layer
 
 Der Agent Reality Layer stellt eine modellunabhängige strukturierte Sicht auf
 Task, Laufzeitstatus, Kontext, Wissen, Berechtigungen, Beobachtungen,
@@ -424,7 +407,7 @@ WorkspaceTools und den Verification-Komponenten.
 
 Die erste technische Implementierung befindet sich in
 `forgeai/core/agent_reality.py` und ist durch
-	`tests/core/test_agent_reality.py` abgesichert.
+`tests/core/test_agent_reality.py` abgesichert.
 
 ## AgentRun und RunReality
 
@@ -433,16 +416,20 @@ Die erste technische Implementierung befindet sich in
 
 #### Aktuell betroffene Dateien
 
+- `forgeai/ai/agent_planner.py`
+- `forgeai/ai/agent_reviewer.py`
+- `forgeai/ai/ollama_client.py`
 - `forgeai/ui/main_window.py`
+- `tests/test_agent_planner.py`
 - `tests/test_update_docs.py`
 
 #### Letzte relevante Commits
 
-- `3ff6c12 (HEAD -> temp/agent-workflow-current) chore: refine automatic documentation synchronization`
-- `c24021d (origin/temp/agent-workflow-current) chore: automate documentation synchronization`
+- `2c11acb (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: refine chat prompt routing`
+- `3ff6c12 chore: refine automatic documentation synchronization`
+- `c24021d chore: automate documentation synchronization`
 - `bf80286 chore: automate encoding checks`
 - `bbea66e feat: integrate reality events with orchestrator`
-- `35c2d2d feat: record agent reality state events`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell

@@ -48,6 +48,51 @@ class AgentPlanner:
         response = self.model_router.generate(
             "planner",
             prompt,
+            response_format={
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "type": "string",
+                    },
+                    "proposed_changes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "action": {
+                                    "type": "string",
+                                    "enum": [
+                                        "create",
+                                        "create_directory",
+                                        "replace",
+                                        "insert_before",
+                                        "insert_after",
+                                    ],
+                                },
+                                "path": {
+                                    "type": "string",
+                                },
+                                "description": {
+                                    "type": "string",
+                                },
+                            },
+                            "required": [
+                                "action",
+                                "path",
+                                "description",
+                            ],
+                        },
+                    },
+                    "rationale": {
+                        "type": "string",
+                    },
+                },
+                "required": [
+                    "summary",
+                    "proposed_changes",
+                    "rationale",
+                ],
+            },
         )
 
         return self._parse_response(response)

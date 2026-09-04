@@ -415,7 +415,11 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Aktuell geänderte Dateien
 
+- `forgeai/ai/agent_planner.py`
+- `forgeai/ai/agent_reviewer.py`
+- `forgeai/ai/ollama_client.py`
 - `forgeai/ui/main_window.py`
+- `tests/test_agent_planner.py`
 - `tests/test_update_docs.py`
 
 #### Teststand
@@ -448,11 +452,11 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Letzte relevante Commits
 
-- `3ff6c12 (HEAD -> temp/agent-workflow-current) chore: refine automatic documentation synchronization`
-- `c24021d (origin/temp/agent-workflow-current) chore: automate documentation synchronization`
+- `2c11acb (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: refine chat prompt routing`
+- `3ff6c12 chore: refine automatic documentation synchronization`
+- `c24021d chore: automate documentation synchronization`
 - `bf80286 chore: automate encoding checks`
 - `bbea66e feat: integrate reality events with orchestrator`
-- `35c2d2d feat: record agent reality state events`
 
 Dieser Abschnitt wird automatisch aus dem lokalen Git- und Teststand
 sowie aus der aktuellen ROADMAP.md erzeugt.

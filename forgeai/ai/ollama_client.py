@@ -301,20 +301,25 @@ class OllamaClient:
         prompt: str,
         model: str | None = None,
         base_url: str | None = None,
+        response_format: dict | str | None = None,
     ) -> str:
         if not model:
             raise ValueError("Kein Ollama-Modell angegeben.")
 
         target_url = base_url if base_url is not None else Config.LOCAL_OLLAMA_URL
+
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+        }
+
+        if response_format is not None:
+            payload["format"] = response_format
+
         request = urllib.request.Request(
             f"{self.local_url(target_url)}/api/chat",
-            data=json.dumps(
-                {
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "stream": False,
-                }
-            ).encode(),
+            data=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json"},
             method="POST",
         )

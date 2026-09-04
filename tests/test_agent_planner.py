@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import pytest
 
@@ -11,7 +11,12 @@ class FakeRouter:
         self.response = response
         self.calls: list[tuple[str, str]] = []
 
-    def generate(self, role: str, prompt: str) -> str:
+    def generate(
+        self,
+        role: str,
+        prompt: str,
+        **kwargs,
+    ) -> str:
         self.calls.append((role, prompt))
         return self.response
 

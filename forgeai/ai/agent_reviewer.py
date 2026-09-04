@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from typing import Any
@@ -26,6 +26,32 @@ class AgentReviewer:
         response = self.model_router.generate(
             "reviewer",
             prompt,
+            response_format={
+                "type": "object",
+                "properties": {
+                    "decision": {
+                        "type": "string",
+                        "enum": ["approve", "revise", "reject"],
+                    },
+                    "findings": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "required_changes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "rationale": {
+                        "type": "string",
+                    },
+                },
+                "required": [
+                    "decision",
+                    "findings",
+                    "required_changes",
+                    "rationale",
+                ],
+            },
         )
 
         return self._parse_response(response)

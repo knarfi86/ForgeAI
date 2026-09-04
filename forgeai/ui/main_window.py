@@ -284,7 +284,15 @@ class MainWindow(QMainWindow):
         if self.worker and self.worker.isRunning() or self.chat_id is None:
             return
 
-        if self._stream_is_action or self._is_change_request(text):
+        is_change_request = self._is_change_request(text)
+        self._stream_is_action = self._action_response_format(text) is not None
+
+        if is_change_request:
+            self.history.add_message(self.chat_id, "user", text)
+            self._pending_user_request = text
+            self.chat_view.add_message("user", text)
+            self.chat_view.add_message("assistant", "")
+
             project_context = self._build_agent_project_context()
             self._start_agent_workflow(text, project_context)
             return
@@ -464,19 +472,17 @@ class MainWindow(QMainWindow):
         if self.chat_id is None:
             return
 
-        self.history.add_message(self.chat_id, "user", request)
         self._pending_user_request = request
         self._agent_project_context = project_context
         self._agent_task = AgentTask(
             task_id=uuid.uuid4().hex,
             user_request=request,
             project_path=(
-                str(self.workspace.active_project.path)
+                str(self.workspace.active_project)
                 if self.workspace.active_project
                 else None
             ),
         )
-        self.chat_view.add_message("user", request)
         self.chat_view.add_message("assistant", "")
         self.input_bar.set_busy(True)
         self._set_agent_status("plane")
