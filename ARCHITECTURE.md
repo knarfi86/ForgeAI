@@ -423,5 +423,22 @@ bestehenden Komponenten wie WorkspaceManager, ForgeBrain, FileSystem,
 WorkspaceTools und den Verification-Komponenten.
 
 Die erste technische Implementierung befindet sich in
-orgeai/core/agent_reality.py und ist durch
-	ests/core/test_agent_reality.py abgesichert.
+`forgeai/core/agent_reality.py` und ist durch
+	`tests/core/test_agent_reality.py` abgesichert.
+
+## AgentRun und RunReality
+
+`AgentRun` bleibt der autoritative Laufzeitanker des Agentenworkflows.
+
+`RunReality` stellt davon eine strukturierte Projection für den Agent Reality
+Layer bereit. Die Projection wird über `RunReality.from_agent_run()` erzeugt.
+
+Die Verantwortung wird nicht verschoben:
+
+- `AgentRun` besitzt den tatsächlichen Laufzeitstatus.
+- `RunReality` repräsentiert diesen Status innerhalb der Reality-Struktur.
+- Änderungen an einer Projection dürfen den autoritativen `AgentRun` nicht
+  verändern.
+
+Damit bleibt der Reality Layer eine Integrationsschicht und wird nicht zur
+zweiten Zustandsverwaltung.

@@ -357,3 +357,22 @@ Verification.
 
 Die Anbindung an die bestehenden Laufzeitkomponenten erfolgt in einem
 separaten Integrationsschritt.
+
+### Reality-Layer-Projektion von AgentRun
+
+`RunReality.from_agent_run()` erzeugt eine strukturierte Reality-Projektion
+aus dem autoritativen `AgentRun`.
+
+Die Projektion übernimmt:
+- aktuellen `AgentState`
+- Review-, Execution- und Repair-Zähler
+- maximale Review- und Repair-Runden
+- History
+- Metadata
+- Revision Context
+
+History, Metadata und Revision Context werden für die Projektion kopiert.
+Die Reality-Projektion verändert dadurch den ursprünglichen `AgentRun` nicht.
+
+Die bestehende Ownership bleibt erhalten:
+`AgentRun` ist weiterhin autoritativ für den Laufzeitstatus.

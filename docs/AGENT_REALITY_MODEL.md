@@ -718,3 +718,24 @@ Die Datenstruktur ist implementiert und durch 4 Unit-Tests abgesichert.
 Die Anbindung an AgentRun, AgentOrchestrator, AIContextProvider,
 WorkspaceManager und AgentVerificationWorker folgt schrittweise und ist
 noch nicht Bestandteil dieses Basisschnitts.
+
+## AgentRun-Projection
+
+Der Reality Layer kann den bestehenden `AgentRun` über
+`RunReality.from_agent_run()` abbilden.
+
+Dabei werden State, Laufzähler, Limits, History, Metadata und Revision
+Context übernommen.
+
+Die Projection ist bewusst vom ursprünglichen `AgentRun` getrennt.
+Änderungen an der erzeugten `RunReality` verändern den autoritativen
+`AgentRun` nicht.
+
+Damit gilt weiterhin:
+
+`AgentRun = Runtime Authority`
+
+`RunReality = Reality Projection`
+
+Die Projection ist somit ein Adapter zwischen dem bestehenden
+Agentenlaufzeitmodell und dem zukünftigen gemeinsamen Reality Context.

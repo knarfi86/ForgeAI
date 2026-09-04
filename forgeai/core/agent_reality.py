@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from forgeai.ai.agent_state import AgentState
+from forgeai.ai.agent_state import AgentRun, AgentState
 
 
 def utc_now() -> datetime:
@@ -136,6 +136,36 @@ class RunReality:
     started_at: datetime | None = None
     finished_at: datetime | None = None
     history: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    revision_context: list[dict[str, Any]] = field(default_factory=list)
+
+    @classmethod
+    def from_agent_run(
+        cls,
+        run: AgentRun,
+        *,
+        run_id: str,
+        started_at: datetime | None = None,
+        finished_at: datetime | None = None,
+    ) -> RunReality:
+        """Creates a Reality projection from the authoritative AgentRun."""
+        if not isinstance(run, AgentRun):
+            raise TypeError("run must be an AgentRun instance.")
+
+        return cls(
+            run_id=run_id,
+            state=run.state,
+            review_round=run.review_round,
+            execution_round=run.execution_round,
+            repair_attempt=run.repair_attempt,
+            max_review_rounds=run.max_review_rounds,
+            max_repair_attempts=run.max_repair_attempts,
+            started_at=started_at,
+            finished_at=finished_at,
+            history=[dict(entry) for entry in run.history],
+            metadata=dict(run.metadata),
+            revision_context=[dict(entry) for entry in run.revision_context],
+        )
 
 
 @dataclass
