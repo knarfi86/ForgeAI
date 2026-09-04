@@ -327,13 +327,33 @@ Dokumentation und betroffener Code werden vor dem Commit gemeinsam geprüft.
 `CURRENT_STATE.md` beschreibt den zuletzt geprüften Stand; die Commit-Historie
 selbst bleibt Aufgabe von Git.
 
-
 ## Agent Reality Model
 
-`docs/AGENT_REALITY_MODEL.md` definiert die konzeptionelle Grundlage f?r die
-modellunabh?ngige Agentenrealit?t.
+`docs/AGENT_REALITY_MODEL.md` definiert die konzeptionelle Grundlage für die
+modellunabhängige Agentenrealität.
 
-`AgentRun` ist dabei als zentraler Laufzeitanker f?r Task, State und History
+`AgentRun` ist dabei als zentraler Laufzeitanker für Task, State und History
 festgelegt. Der geplante Reality Layer verbindet diese Informationen mit
 Context, Knowledge, Authority, Observation, Evidence und Verification, ohne
-die bestehenden Verantwortlichkeiten in einem God Object zusammenzuf?hren.
+die bestehenden Verantwortlichkeiten in einem God Object zusammenzuführen.
+
+### Implementierter Reality-Layer-Kern
+
+Der erste technische Schnitt des Agent Reality Layers ist implementiert:
+
+- `forgeai/core/agent_reality.py`
+- `tests/core/test_agent_reality.py`
+
+Der Kern enthält strukturierte Dataclasses für Identity, Task, Run, Context,
+Knowledge, Memory, Capability, Authority, Observation, Evidence, Uncertainty,
+Decision, Action, Verification und Event sowie die zugehörigen Enums.
+
+Der Implementierungsstand ist durch 4 Unit-Tests abgesichert.
+
+`AgentRun` bleibt der autoritative Laufzeitanker. `AgentReality` ist eine
+Integrations- und Snapshot-Struktur und übernimmt nicht die Zuständigkeiten
+von `WorkspaceManager`, `ForgeBrain`, `FileSystem`, `WorkspaceTools` oder
+Verification.
+
+Die Anbindung an die bestehenden Laufzeitkomponenten erfolgt in einem
+separaten Integrationsschritt.

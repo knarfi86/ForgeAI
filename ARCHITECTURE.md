@@ -411,4 +411,17 @@ erhalten bleiben.
 → führt ausschließlich autorisierte tatsächliche Schreibvorgänge aus
 
 Der Planner, Reviewer und Repairer dürfen nicht direkt Projektdateien schreiben.
-Der tatsächliche Schreibzugriff bleibt zentral kontrolliert.
+Der tatsächliche Schreibzugriff bleibt zentral kontrolliert.\n\n## Agent Reality Layer
+
+Der Agent Reality Layer stellt eine modellunabhängige strukturierte Sicht auf
+Task, Laufzeitstatus, Kontext, Wissen, Berechtigungen, Beobachtungen,
+Evidenz, Entscheidungen, Aktionen und Verifikation bereit.
+
+Der Layer ist eine Integrationsschicht und kein God Object. AgentRun bleibt
+der zentrale Laufzeitanker. Autoritative Zuständigkeiten verbleiben bei den
+bestehenden Komponenten wie WorkspaceManager, ForgeBrain, FileSystem,
+WorkspaceTools und den Verification-Komponenten.
+
+Die erste technische Implementierung befindet sich in
+orgeai/core/agent_reality.py und ist durch
+	ests/core/test_agent_reality.py abgesichert.

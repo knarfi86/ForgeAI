@@ -660,4 +660,61 @@ LLM-Vorschlag
 
 **Dokumentationshinweis:** `docs/CURRENT_STATE.md` enthält aktuell einen älteren Referenz-Commit und sollte beim nächsten Dokumentationscommit auf den tatsächlichen Stand von `forgeai-dev` synchronisiert werden.
 
-**Wichtig:** Dieses Dokument ersetzt weder `ARCHITECTURE.md` noch `ROADMAP.md` oder `docs/CURRENT_STATE.md`. Es bündelt die neue konzeptionelle Ebene und soll vor der nächsten größeren Agenten-/Orchestratoränderung gemeinsam mit diesen Dokumenten aktualisiert werden.
+**Wichtig:** Dieses Dokument ersetzt weder `ARCHITECTURE.md` noch `ROADMAP.md` oder `docs/CURRENT_STATE.md`. Es bündelt die neue konzeptionelle Ebene und soll vor der nächsten größeren Agenten-/Orchestratoränderung gemeinsam mit diesen Dokumenten aktualisiert werden.\n\n## Implementierter Datenmodell-Kern
+
+Der erste technische Reality-Layer ist als modellunabhängiges Python-Datenmodell
+implementiert.
+
+### Kernobjekte
+
+- AgentIdentity
+- TaskReality
+- RunReality
+- ContextResource
+- ContextReality
+- KnowledgeReference
+- KnowledgeReality
+- MemoryEntry
+- MemoryReality
+- Capability
+- AuthorityRule
+- Observation
+- Evidence
+- Uncertainty
+- Decision
+- Action
+- Verification
+- AgentEvent
+- AgentReality
+
+### Semantik
+
+Observation beschreibt eine tatsächlich erfasste Beobachtung.
+Evidence beschreibt deren Bedeutung für eine Aussage.
+Uncertainty beschreibt offene Fragen einschließlich möglicher
+Auflösungsaktionen. Decision beschreibt eine gewählte Handlungsoption.
+Action beschreibt die daraus entstandene Handlungsabsicht und wird erst nach
+Authority-Prüfung ausgeführt. Verification beschreibt die externe Prüfung
+des tatsächlich erreichten Zustands.
+
+### Ownership
+
+AgentReality ist keine neue zentrale Autorität. Bestehende Komponenten
+bleiben für ihren Bereich zuständig. Der Reality Layer verbindet diese
+Informationen und stellt sie strukturiert für Orchestrator und Agentenrollen
+bereit.
+
+### Lebenszyklus
+
+Observe → State → Context → Reason → Decide → Act → Verify → Update Reality
+
+Ein fehlgeschlagener Verifikationslauf führt über Observation, Evidence und
+Uncertainty in die Analyse- und Reparaturlogik und anschließend zurück in den
+Verifikationszyklus.
+
+### Aktueller Implementierungsstand
+
+Die Datenstruktur ist implementiert und durch 4 Unit-Tests abgesichert.
+Die Anbindung an AgentRun, AgentOrchestrator, AIContextProvider,
+WorkspaceManager und AgentVerificationWorker folgt schrittweise und ist
+noch nicht Bestandteil dieses Basisschnitts.
