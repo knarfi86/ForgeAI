@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
@@ -30,6 +30,11 @@ try {
     $CompileExit = $LASTEXITCODE
 
     Write-Host ""
+    Write-Host "=== encoding check ==="
+    & $Python .\scripts\check_encoding.py
+    $EncodingExit = $LASTEXITCODE
+
+    Write-Host ""
     Write-Host "=== git diff --check ==="
     git diff --check
     $DiffExit = $LASTEXITCODE
@@ -42,7 +47,7 @@ try {
 
     $PytestOutput | Tee-Object -FilePath $TextReport
 
-    $Status = if ($CompileExit -eq 0 -and $DiffExit -eq 0 -and $PytestExit -eq 0) {
+    $Status = if ($CompileExit -eq 0 -and $EncodingExit -eq 0 -and $DiffExit -eq 0 -and $PytestExit -eq 0) {
         "PASS"
     } else {
         "FAIL"
@@ -57,6 +62,7 @@ try {
         python = $PythonVersion.ToString()
         git_commit = $GitCommit
         compileall_exit_code = $CompileExit
+        encoding_check_exit_code = $EncodingExit
         diff_check_exit_code = $DiffExit
         pytest_exit_code = $PytestExit
         git_status = $GitStatus.Trim()
