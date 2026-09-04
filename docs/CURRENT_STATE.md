@@ -3,9 +3,9 @@
 ## Git
 
 - Branch: `temp/agent-workflow-current`
-- Referenz-Commit: `cbd658c`
-- Commit: `TEMP: current agent workflow state`
 - Repository: `knarfi86/ForgeAI`
+- Die Dokumentation beschreibt den zuletzt geprüften Entwicklungsstand.
+- Die exakte Commit-Historie wird durch Git geführt und nicht manuell in dieser Datei gepflegt.
 
 ## Aktueller Funktionsstand
 
@@ -312,3 +312,17 @@ Die vollständige End-to-End-Kopplung des Agentenplans mit dem bestehenden
 Änderungsworkflow und der automatischen Ausführung ist noch nicht
 abgeschlossen. Die einzelnen Recovery-Komponenten und die
 Reparatur-Review-Schleife sind jedoch implementiert und getestet.
+
+## Dokumentationsregel
+
+Bei jedem funktionalen Commit wird geprüft, ob folgende Dokumente an den
+aktuellen Entwicklungsstand angepasst werden müssen:
+
+- `docs/CURRENT_STATE.md`
+- `ARCHITECTURE.md`
+- `ROADMAP.md`
+- `docs/AGENT_REALITY_MODEL.md`
+
+Dokumentation und betroffener Code werden vor dem Commit gemeinsam geprüft.
+`CURRENT_STATE.md` beschreibt den zuletzt geprüften Stand; die Commit-Historie
+selbst bleibt Aufgabe von Git.
