@@ -327,11 +327,14 @@ class MainWindow(QMainWindow):
         self.chat_view.add_message("user", text)
         self.chat_view.add_message("assistant", "")
         is_analysis_request = self._is_analysis_request(text)
+        response_format = self._action_response_format(text)
 
         if is_analysis_request:
             system_content = SYSTEM_PROMPT + self._analysis_instructions()
-        else:
+        elif response_format is not None:
             system_content = SYSTEM_PROMPT + self._change_action_instructions()
+        else:
+            system_content = SYSTEM_PROMPT
 
         model_context_length = self.ollama.get_context_length(
             self.ollama_url,
@@ -383,8 +386,6 @@ class MainWindow(QMainWindow):
 
         messages = [{"role": "system", "content": system_content}]
         messages += [{"role": row["role"], "content": row["content"]} for row in self.history.messages(self.chat_id)]
-        response_format = self._action_response_format(text)
-
         self.worker = self.ollama.stream_chat(
             self.ollama_url,
             self.model,

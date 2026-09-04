@@ -434,17 +434,15 @@ Die erste technische Implementierung befindet sich in
 #### Aktuell betroffene Dateien
 
 - `forgeai/ui/main_window.py`
-- `scripts/update_docs.py`
-- `tests/test_doc_tools.py`
 - `tests/test_update_docs.py`
 
 #### Letzte relevante Commits
 
-- `c24021d (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) chore: automate documentation synchronization`
+- `3ff6c12 (HEAD -> temp/agent-workflow-current) chore: refine automatic documentation synchronization`
+- `c24021d (origin/temp/agent-workflow-current) chore: automate documentation synchronization`
 - `bf80286 chore: automate encoding checks`
 - `bbea66e feat: integrate reality events with orchestrator`
 - `35c2d2d feat: record agent reality state events`
-- `20096a5 feat: project task and run into agent reality`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell

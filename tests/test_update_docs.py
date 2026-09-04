@@ -73,7 +73,7 @@ def test_update_docs_updates_auto_blocks_and_is_idempotent():
         "<!-- FORGE:AUTO:CURRENT_STATE:END -->",
     )
 
-    assert "scripts/update_docs.py" in current_state_block
+    assert "forgeai/ui/main_window.py" in current_state_block
     assert "tests/test_update_docs.py" in current_state_block
     assert "- `ARCHITECTURE.md`" not in current_state_block
     assert "- `docs/CURRENT_STATE.md`" not in current_state_block
