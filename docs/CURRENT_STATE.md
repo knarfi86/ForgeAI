@@ -326,3 +326,14 @@ aktuellen Entwicklungsstand angepasst werden müssen:
 Dokumentation und betroffener Code werden vor dem Commit gemeinsam geprüft.
 `CURRENT_STATE.md` beschreibt den zuletzt geprüften Stand; die Commit-Historie
 selbst bleibt Aufgabe von Git.
+
+
+## Agent Reality Model
+
+`docs/AGENT_REALITY_MODEL.md` definiert die konzeptionelle Grundlage f?r die
+modellunabh?ngige Agentenrealit?t.
+
+`AgentRun` ist dabei als zentraler Laufzeitanker f?r Task, State und History
+festgelegt. Der geplante Reality Layer verbindet diese Informationen mit
+Context, Knowledge, Authority, Observation, Evidence und Verification, ohne
+die bestehenden Verantwortlichkeiten in einem God Object zusammenzuf?hren.
