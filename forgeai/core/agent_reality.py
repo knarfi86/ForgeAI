@@ -354,6 +354,42 @@ class AgentEvent:
 
 @dataclass
 class AgentReality:
+    def record_run_state(
+        self,
+        *,
+        phase: str,
+        actor: RealitySource = RealitySource.ORCHESTRATOR,
+    ) -> AgentEvent:
+        "Record the current authoritative AgentRun state as a Reality event."
+        if self.run.state is None:
+            raise ValueError("AgentRun state must not be None.")
+
+        state_after = self.run.state.value
+
+        state_before = None
+        if self.events:
+            previous = self.events[-1]
+            state_before = previous.state_after
+
+        event = AgentEvent(
+            event_id=f"{self.run.run_id}:state:{len(self.events) + 1}",
+            event_type=EventType.STATE_CHANGED,
+            task_id=self.task.task_id,
+            run_id=self.run.run_id,
+            actor=actor,
+            phase=phase,
+            state_before=state_before,
+            state_after=state_after,
+            payload={
+                "review_round": self.run.review_round,
+                "execution_round": self.run.execution_round,
+                "repair_attempt": self.run.repair_attempt,
+            },
+        )
+
+        self.events.append(event)
+        return event
+
     @classmethod
     def from_task_and_run(
         cls,

@@ -759,3 +759,22 @@ Die Ownership bleibt damit unverändert:
 `AgentTask / AgentRun = Runtime Authority`
 
 `TaskReality / RunReality / AgentReality = Reality Projection`
+
+## Reality Events
+
+`AgentReality` kann Zustandsänderungen des autoritativen `AgentRun` über
+`record_run_state()` als `AgentEvent` abbilden.
+
+Ein Event enthält insbesondere:
+- Task- und Run-Identität
+- Actor und Phase
+- vorherigen und aktuellen Zustand
+- Review-, Execution- und Repair-Zähler
+- Zeitpunkt und Event-ID
+
+Damit entsteht eine strukturierte zeitliche Sicht auf den Agentenlauf, ohne
+dass `AgentReality` die Ownership des `AgentRun` übernimmt.
+
+`AgentRun = Runtime Authority`
+
+`AgentEvent = Reality Observation of Runtime Transition`

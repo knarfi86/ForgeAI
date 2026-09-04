@@ -461,3 +461,19 @@ Laufzeitstatus.
 Die Projection ist bewusst getrennt von den Ausgangsobjekten. Kopierte
 Metadata-, History- und Revision-Context-Strukturen verhindern, dass eine
 Änderung an der Reality-Sicht den autoritativen Agentenlauf verändert.
+
+## AgentRun State Events
+
+Der Reality Layer kann Zustandsübergänge des `AgentRun` als `AgentEvent`
+abbilden.
+
+`AgentReality.record_run_state()` erzeugt dabei eine Reality-Repräsentation
+des aktuellen Laufzeitzustands. Die Methode verändert den `AgentRun` nicht.
+
+Damit bleibt die Verantwortungsverteilung erhalten:
+
+`AgentRun` verwaltet den autoritativen Zustand.
+
+`AgentReality` stellt eine strukturierte Sicht auf diesen Zustand bereit.
+
+`AgentEvent` dokumentiert den beobachteten Zustand innerhalb dieser Sicht.

@@ -392,8 +392,19 @@ abbilden.
 `AgentIdentity` zu einer gemeinsamen Reality-Sicht.
 
 Dabei bleibt `AgentTask` bzw. `AgentRun` jeweils die autoritative Quelle.
-Die erzeugten Reality-Objekte sind Projektionen und ver?ndern die
+Die erzeugten Reality-Objekte sind Projektionen und verändern die
 Ausgangsobjekte nicht.
 
-`TaskReality.project_path` beh?lt die Semantik von `AgentTask.project_path`
+`TaskReality.project_path` behält die Semantik von `AgentTask.project_path`
 bei und bleibt daher optional (`str | None`).
+
+### Reality-Layer-Event-Projektion
+
+`AgentReality.record_run_state()` kann den aktuellen autoritativen
+`AgentRun`-Zustand als `AgentEvent` in der Reality-Sicht erfassen.
+
+Dabei werden Task-ID, Run-ID, Phase, vorheriger und aktueller Zustand sowie
+die aktuellen Review-, Execution- und Repair-Zähler festgehalten.
+
+Die Event-Historie ist Teil der Reality-Sicht und ersetzt nicht die
+autoritative `AgentRun`-History.
