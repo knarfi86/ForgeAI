@@ -428,6 +428,18 @@ Die erste technische Implementierung befindet sich in
 
 ## AgentRun und RunReality
 
+<!-- FORGE:AUTO:ARCHITECTURE:START -->
+### Automatischer Reality-Status
+
+- `AgentRun` bleibt die autoritative Laufzeitinstanz.
+- Der Reality Layer bildet den Laufzeitstatus strukturiert ab.
+- Runtime-Zustandsänderungen können als `AgentEvent` beobachtet werden.
+- Der Orchestrator kann Reality-Beobachtungen optional aufzeichnen.
+
+Diese automatische Zusammenfassung enthält nur aus dem Repository
+ableitbare technische Fakten.
+<!-- FORGE:AUTO:ARCHITECTURE:END -->
+
 `AgentRun` bleibt der autoritative Laufzeitanker des Agentenworkflows.
 
 `RunReality` stellt davon eine strukturierte Projection für den Agent Reality

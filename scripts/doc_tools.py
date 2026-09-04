@@ -2,10 +2,11 @@ from pathlib import Path
 
 
 def write_utf8(path: str | Path, content: str) -> None:
-    """Write repository text as UTF-8 without BOM and with LF endings."""
+    normalized = content.replace("\r\n", "\n").replace("\r", "\n")
+
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8", newline="\n")
+    target.write_bytes(normalized.encode("utf-8"))
 
 
 def replace_marked_block(
@@ -14,7 +15,6 @@ def replace_marked_block(
     end_marker: str,
     replacement: str,
 ) -> None:
-    """Replace one explicitly marked documentation block."""
     target = Path(path)
     content = target.read_text(encoding="utf-8")
 
@@ -39,6 +39,7 @@ def replace_marked_block(
         + "\n"
         + replacement.rstrip("\r\n")
         + "\n"
+        + end_marker
         + content[end:]
     )
 

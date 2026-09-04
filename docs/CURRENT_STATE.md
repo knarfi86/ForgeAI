@@ -410,6 +410,24 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 ### Reality-Layer-Event-Projektion
 
+<!-- FORGE:AUTO:CURRENT_STATE:START -->
+### Automatisch gepflegter Projektstand
+
+Die folgenden Fakten werden direkt aus dem Repository ermittelt:
+
+- Pytest-Testfaelle: **229**
+- Agent Reality Datenmodell: **implementiert**
+- Reality-State-Events: **implementiert**
+- AgentOrchestrator-Reality-Anbindung: **vorhanden**
+- Encoding-Gate: `scripts/check_encoding.py` **vorhanden**
+- Automatische Doku-Pflege: **vorhanden**
+- Automatisierter Test-Runner: **vorhanden**
+
+Dieser Abschnitt beschreibt den technisch belegbaren Stand.
+Architekturentscheidungen, Begr?ndungen und strategische Planung
+bleiben in den manuell gepflegten Abschnitten erhalten.
+<!-- FORGE:AUTO:CURRENT_STATE:END -->
+
 `AgentReality.record_run_state()` kann den aktuellen autoritativen
 `AgentRun`-Zustand als `AgentEvent` in der Reality-Sicht erfassen.
 

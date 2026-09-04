@@ -734,6 +734,19 @@ Die weitere Anbindung von `AIContextProvider`, `WorkspaceManager` und
 
 ## AgentRun-Projection
 
+<!-- FORGE:AUTO:REALITY_MODEL:START -->
+### Automatisch ermittelter Implementierungsstand
+
+- `AgentReality`-Datenmodell: implementiert
+- `AgentReality.record_run_state()`: implementiert
+- `AgentOrchestrator` kann Reality-State-Events aufzeichnen
+- Automatisch ermittelte Testbasis: **229 Testfaelle**
+
+Die Einträge dieses Abschnitts werden aus dem vorhandenen Code- und
+Testbestand abgeleitet. Manuelle Architektur- und Modellentscheidungen
+werden nicht überschrieben.
+<!-- FORGE:AUTO:REALITY_MODEL:END -->
+
 Der Reality Layer kann den bestehenden `AgentRun` über
 `RunReality.from_agent_run()` abbilden.
 
