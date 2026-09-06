@@ -261,7 +261,7 @@ Der zuletzt vollständig ausgeführte und verifizierte Testlauf stammt vom
 
 - `compileall`: PASS
 - `git diff --check`: PASS
-- `pytest`: **207/207 PASS**
+- `pytest`: **230/230 PASS**
 - Python: 3.11.9
 - pytest: 9.1.1
 
@@ -429,8 +429,6 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 #### Aktuell geänderte Dateien
 
 - `ROADMAP.md`
-- `scripts/update_docs.py`
-- `tests/test_update_docs.py`
 
 #### Teststand
 
@@ -450,11 +448,11 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Letzte relevante Commits
 
-- `aed8740 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: stabilize planner reviewer workflow`
+- `60f9771 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) chore: synchronize project documentation and tooling`
+- `aed8740 fix: stabilize planner reviewer workflow`
 - `d5f58d3 fix: stabilize agent JSON workflow`
 - `2c11acb fix: refine chat prompt routing`
 - `3ff6c12 chore: refine automatic documentation synchronization`
-- `c24021d chore: automate documentation synchronization`
 
 Dieser Abschnitt wird automatisch aus dem lokalen Git- und Teststand
 sowie aus der aktuellen ROADMAP.md erzeugt.

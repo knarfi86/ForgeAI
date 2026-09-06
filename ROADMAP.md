@@ -171,7 +171,7 @@ betrifft vor allem die vollständige End-to-End-Integration.
 - durchgängige Kopplung von AgentPlan und bestehendem ChangePreview-Workflow
 - vollständige Verkettung von Benutzerfreigabe, Apply und Verifikation
 - vollständige Rückf?hrung der Testergebnisse in die Agentensteuerung
-- vollständige End-to-End-Recovery über mehrere Reparaturdurchl?ufe
+- vollständige End-to-End-Recovery über mehrere Reparaturdurchläufe
 
 ### Aktuelle AgentRun-Defaults
 
@@ -186,17 +186,17 @@ drei Reparaturversuchen.
 Der Zielworkflow lautet:
 
 `PLAN`
-? `REVIEW`
-? `REVISE`
-? `USER APPROVAL`
-? `EXECUTE`
-? `TEST`
-? `ANALYZE`
-? `REPAIR`
-? `REVIEW`
-? `EXECUTE`
-? `TEST`
-? ...
+→ `REVIEW`
+→ `REVISE`
+→ `USER APPROVAL`
+→ `EXECUTE`
+→ `TEST`
+→ `ANALYZE`
+→ `REPAIR`
+→ `REVIEW`
+→ `EXECUTE`
+→ `TEST`
+→ ...
 
 Review und Repair bleiben getrennte, optional steuerbare
 Verantwortlichkeiten.

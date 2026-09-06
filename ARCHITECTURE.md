@@ -285,7 +285,7 @@ Die Prüfung ist vollständig konfigurierbar und kann deaktiviert werden.
 Vorgesehene Einstellungen:
 
 - `review_enabled`: `true` oder `false`
-- `review_max_rounds`: Minimum `1`, Standard `2`, Maximum `7`
+- `max_review_rounds`: aktueller Standard `3`
 
 Das Maximum von sieben Runden ist eine technische Sicherheitsgrenze gegen
 Endlosschleifen. Die tatsächliche Anzahl der Runden endet früher, sobald
@@ -428,16 +428,14 @@ Die erste technische Implementierung befindet sich in
 #### Aktuell betroffene Dateien
 
 - `ROADMAP.md`
-- `scripts/update_docs.py`
-- `tests/test_update_docs.py`
 
 #### Letzte relevante Commits
 
-- `aed8740 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: stabilize planner reviewer workflow`
+- `60f9771 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) chore: synchronize project documentation and tooling`
+- `aed8740 fix: stabilize planner reviewer workflow`
 - `d5f58d3 fix: stabilize agent JSON workflow`
 - `2c11acb fix: refine chat prompt routing`
 - `3ff6c12 chore: refine automatic documentation synchronization`
-- `c24021d chore: automate documentation synchronization`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell
