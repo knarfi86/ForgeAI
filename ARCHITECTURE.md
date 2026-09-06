@@ -427,17 +427,17 @@ Die erste technische Implementierung befindet sich in
 
 #### Aktuell betroffene Dateien
 
-- `forgeai/ai/agent_orchestrator.py`
+- `forgeai/ai/agent_ui_worker.py`
 - `forgeai/ui/main_window.py`
-- `tests/test_agent_orchestrator.py`
+- `tests/test_agent_recovery_ui.py`
 
 #### Letzte relevante Commits
 
-- `c74ed71 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: add deterministic agent status to documentation`
+- `044cd99 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: connect agent apply to verification`
+- `c74ed71 feat: add deterministic agent status to documentation`
 - `95be02f fix: repair documentation encoding and current state`
 - `60f9771 chore: synchronize project documentation and tooling`
 - `aed8740 fix: stabilize planner reviewer workflow`
-- `d5f58d3 fix: stabilize agent JSON workflow`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell

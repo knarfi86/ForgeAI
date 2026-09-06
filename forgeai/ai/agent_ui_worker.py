@@ -222,7 +222,8 @@ class AgentRecoveryWorker(QThread):
             self.orchestrator.planner = planner
             self.orchestrator.reviewer = reviewer
 
-            self.orchestrator.begin_analysis()
+            if self.orchestrator.run.state != AgentState.ANALYZING:
+                self.orchestrator.begin_analysis()
 
             analysis = self.orchestrator.analyze(
                 self.task,

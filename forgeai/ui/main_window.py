@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 from forgeai.ai.agent_contracts import AgentTask
 from forgeai.ai.agent_orchestrator import AgentOrchestrator
 from forgeai.ai.agent_state import AgentState
-from forgeai.ai.agent_ui_worker import AgentVerificationWorker, AgentWorkflowWorker
+from forgeai.ai.agent_ui_worker import AgentRecoveryWorker, AgentVerificationWorker, AgentWorkflowWorker
 from forgeai.ai.change_actions import extract_change_previews
 from forgeai.ai.ollama_client import OllamaClient
 from forgeai.ai.prompts import SYSTEM_PROMPT
@@ -65,6 +65,7 @@ class MainWindow(QMainWindow):
         self._pending_user_request = ""
         self._agent_worker: AgentWorkflowWorker | None = None
         self._agent_verification_worker: AgentVerificationWorker | None = None
+        self._agent_recovery_worker: AgentRecoveryWorker | None = None
         self._agent_orchestrator: AgentOrchestrator | None = None
         self._agent_task: AgentTask | None = None
         self._agent_plan = None
@@ -519,57 +520,13 @@ class MainWindow(QMainWindow):
         self._agent_orchestrator = orchestrator
         self._agent_task = task
         self._agent_plan = plan
-
-        changes = []
-        for change in plan.proposed_changes:
-            action = change.get("action", "unbekannt")
-            path = change.get("path", "")
-            description = change.get("description", "")
-            changes.append(
-                f"- {action} {path}: {description}"
-            )
-
-        plan_message = (
-            f"### Agent-Plan\n\n"
-            f"**Zusammenfassung:** {plan.summary}\n\n"
-            f"**Geplante Änderungen:**\n"
-            + ("\n".join(changes) if changes else "- Keine konkreten Änderungen")
-            + f"\n\n**Begründung:** {plan.rationale}"
-        )
-
-        self._set_agent_status("Freigabe erforderlich")
-        self.input_bar.set_busy(False)
-
-        if self.chat_view.pending:
-            self.chat_view.pending.set_content(plan_message)
-
-        if self.chat_id is not None:
-            self.history.add_message(
-                self.chat_id,
-                "assistant",
-                plan_message,
-            )
-
-        answer = QMessageBox.question(
-            self,
-            "Agentenplan freigeben",
-            (
-                "Der Agent hat Planung und Review abgeschlossen.\n\n"
-                f"{plan.summary}\n\n"
-                "Sollen die geplanten Änderungen ausgeführt werden?"
+        self._request_agent_plan_approval(
+            plan,
+            dialog_title="Agentenplan freigeben",
+            dialog_intro=(
+                "Der Agent hat Planung und Review abgeschlossen."
             ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
         )
-
-        if answer != QMessageBox.StandardButton.Yes:
-            orchestrator.abort()
-            self._set_agent_status("abgebrochen")
-            return
-
-        orchestrator.approve()
-        self._set_agent_status("führe Plan aus")
-        self._start_agent_coder_stream()
 
     def _start_agent_coder_stream(self) -> None:
         if self.chat_id is None or self._agent_plan is None:
@@ -1155,6 +1112,7 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
             self._set_agent_status("Tests bestanden")
         elif state == AgentState.ANALYZING:
             self._set_agent_status("Tests fehlgeschlagen, Analyse erforderlich")
+            self._start_agent_recovery(test_output)
 
         self.logger.info(
             "Agent verification finished: success=%s, exit_code=%s, state=%s",
@@ -1162,6 +1120,141 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
             exit_code,
             state.value,
         )
+
+    def _start_agent_recovery(self, test_output: str) -> None:
+        """Startet Analyse und Reparatur nach einem fehlgeschlagenen Testlauf."""
+        if self._agent_orchestrator is None:
+            return
+        if self._agent_task is None:
+            self._set_agent_status("Recovery nicht möglich: keine Agent-Aufgabe")
+            return
+        if self._agent_recovery_worker is not None:
+            return
+        project = self.workspace.active_project
+        if not project:
+            self._set_agent_status("Kein Projekt für Recovery")
+            return
+
+        self._set_agent_status("analysiere fehlgeschlagenen Testlauf")
+        self.input_bar.set_busy(True)
+
+        worker = AgentRecoveryWorker(
+            orchestrator=self._agent_orchestrator,
+            task=self._agent_task,
+            test_output=test_output,
+            project_context=self._agent_project_context,
+            model=self.model,
+            base_url=self.ollama_url,
+            review_enabled=self.agent_review_enabled,
+            parent=self,
+        )
+        self._agent_recovery_worker = worker
+        worker.completed.connect(self._agent_recovery_finished)
+        worker.failed.connect(self._agent_recovery_failed)
+        worker.start()
+
+    def _agent_recovery_finished(
+        self,
+        orchestrator: AgentOrchestrator,
+        analysis,
+        plan,
+    ) -> None:
+        worker = self._agent_recovery_worker
+        self._agent_recovery_worker = None
+
+        if worker is not None:
+            worker.deleteLater()
+
+        self._agent_orchestrator = orchestrator
+        self._agent_plan = plan
+        self.input_bar.set_busy(False)
+
+        self._request_agent_plan_approval(
+            plan,
+            dialog_title="Reparaturplan freigeben",
+            dialog_intro=(
+                "Der Agent hat den fehlgeschlagenen Test analysiert und "
+                "einen Reparaturplan erstellt."
+            ),
+        )
+
+    def _agent_recovery_failed(self, error: str) -> None:
+        worker = self._agent_recovery_worker
+        self._agent_recovery_worker = None
+
+        if worker is not None:
+            worker.deleteLater()
+
+        self.input_bar.set_busy(False)
+        self._set_agent_status("Recovery-Fehler")
+        self.logger.error("Agent recovery worker failed: %s", error)
+
+    def _request_agent_plan_approval(
+        self,
+        plan,
+        *,
+        dialog_title: str,
+        dialog_intro: str,
+    ) -> None:
+        changes = []
+        for change in plan.proposed_changes:
+            action = change.get("action", "unbekannt")
+            path = change.get("path", "")
+            description = change.get("description", "")
+            changes.append(
+                f"- {action} {path}: {description}"
+            )
+
+        plan_message = (
+            f"### Agent-Plan\n\n"
+            f"**Zusammenfassung:** {plan.summary}\n\n"
+            f"**Geplante änderungen:**\n"
+            + (
+                "\n".join(changes)
+                if changes
+                else "- Keine konkreten änderungen"
+            )
+            + f"\n\n**Begründung:** {plan.rationale}"
+        )
+
+        self._set_agent_status("Freigabe erforderlich")
+        self.input_bar.set_busy(False)
+
+        if self.chat_view.pending:
+            self.chat_view.pending.set_content(plan_message)
+
+        if self.chat_id is not None:
+            self.history.add_message(
+                self.chat_id,
+                "assistant",
+                plan_message,
+            )
+
+        answer = QMessageBox.question(
+            self,
+            dialog_title,
+            (
+                f"{dialog_intro}\n\n"
+                f"{plan.summary}\n\n"
+                "Sollen die geplanten änderungen ausgeführt werden?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+
+        if answer != QMessageBox.StandardButton.Yes:
+            if self._agent_orchestrator is not None:
+                self._agent_orchestrator.abort()
+            self._set_agent_status("abgebrochen")
+            return
+
+        if self._agent_orchestrator is None:
+            self._set_agent_status("Kein Agentenlauf vorhanden")
+            return
+
+        self._agent_orchestrator.approve()
+        self._set_agent_status("führe Plan aus")
+        self._start_agent_coder_stream()
 
     def _agent_verification_failed(self, error: str) -> None:
         worker = self._agent_verification_worker
