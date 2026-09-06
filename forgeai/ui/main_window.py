@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 from forgeai.ai.agent_contracts import AgentTask
 from forgeai.ai.agent_orchestrator import AgentOrchestrator
 from forgeai.ai.agent_state import AgentState
-from forgeai.ai.agent_ui_worker import AgentWorkflowWorker
+from forgeai.ai.agent_ui_worker import AgentVerificationWorker, AgentWorkflowWorker
 from forgeai.ai.change_actions import extract_change_previews
 from forgeai.ai.ollama_client import OllamaClient
 from forgeai.ai.prompts import SYSTEM_PROMPT
@@ -64,6 +64,7 @@ class MainWindow(QMainWindow):
         self.chat_id: int | None = None
         self._pending_user_request = ""
         self._agent_worker: AgentWorkflowWorker | None = None
+        self._agent_verification_worker: AgentVerificationWorker | None = None
         self._agent_orchestrator: AgentOrchestrator | None = None
         self._agent_task: AgentTask | None = None
         self._agent_plan = None
@@ -1077,11 +1078,113 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
                 applied += 1
             except (OSError, PermissionError) as error:
                 errors.append(str(error))
-        if applied:
-            self.refresh_index()
         if errors:
             return False, f"{applied} Änderung(en) angewendet; Fehler: {' | '.join(errors)}"
+
+        if applied:
+            self.refresh_index()
+
+            if (
+                self._agent_orchestrator is not None
+                and self._agent_orchestrator.run.state == AgentState.EXECUTING
+                and self._agent_verification_worker is None
+            ):
+                self._start_agent_verification()
+
         return True, f"{applied} Dateiänderung(en) wurden angewendet."
+
+    def _start_agent_verification(self) -> None:
+        """Startet die technische Verifikation nach einem Agent-Apply."""
+        if self._agent_orchestrator is None:
+            return
+
+        project = self.workspace.active_project
+        if not project:
+            self._set_agent_status("Kein Projekt für Verifikation")
+            return
+
+        if self._agent_verification_worker is not None:
+            return
+
+        try:
+            self._agent_orchestrator.begin_testing()
+        except RuntimeError as error:
+            self.logger.error(
+                "Agent verification could not start: %s",
+                error,
+            )
+            self._set_agent_status("Verifikation nicht gestartet")
+            return
+
+        worker = AgentVerificationWorker(project, parent=self)
+        self._agent_verification_worker = worker
+        worker.completed.connect(self._agent_verification_finished)
+        worker.failed.connect(self._agent_verification_failed)
+        worker.start()
+
+    def _agent_verification_finished(
+        self,
+        success: bool,
+        exit_code: int,
+        test_output: str,
+    ) -> None:
+        worker = self._agent_verification_worker
+        self._agent_verification_worker = None
+
+        if worker is not None:
+            worker.deleteLater()
+
+        orchestrator = self._agent_orchestrator
+        if orchestrator is None:
+            return
+
+        try:
+            state = orchestrator.handle_verification_result(
+                success,
+                test_output,
+            )
+        except RuntimeError as error:
+            self.logger.error(
+                "Could not process agent verification result: %s",
+                error,
+            )
+            self._set_agent_status("Verifikation konnte nicht verarbeitet werden")
+            return
+
+        if state == AgentState.COMPLETED:
+            self._set_agent_status("Tests bestanden")
+        elif state == AgentState.ANALYZING:
+            self._set_agent_status("Tests fehlgeschlagen, Analyse erforderlich")
+
+        self.logger.info(
+            "Agent verification finished: success=%s, exit_code=%s, state=%s",
+            success,
+            exit_code,
+            state.value,
+        )
+
+    def _agent_verification_failed(self, error: str) -> None:
+        worker = self._agent_verification_worker
+        self._agent_verification_worker = None
+
+        if worker is not None:
+            worker.deleteLater()
+
+        orchestrator = self._agent_orchestrator
+        if orchestrator is not None and orchestrator.run.state == AgentState.TESTING:
+            try:
+                orchestrator.handle_verification_result(
+                    False,
+                    f"Verification worker error: {error}",
+                )
+            except RuntimeError:
+                pass
+
+        self._set_agent_status("Verifikationsfehler")
+        self.logger.error(
+            "Agent verification worker failed: %s",
+            error,
+        )
 
     @classmethod
     def _is_ai_control_file(cls, path: Path) -> bool:

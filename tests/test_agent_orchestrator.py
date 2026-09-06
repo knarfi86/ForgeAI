@@ -102,6 +102,42 @@ def test_execution_moves_to_testing():
     assert orchestrator.begin_testing() == AgentState.TESTING
 
 
+def test_successful_verification_completes_run():
+    run = AgentRun(task_id="task-1")
+    orchestrator = AgentOrchestrator(run)
+
+    orchestrator.start()
+    orchestrator.begin_execution()
+    orchestrator.begin_testing()
+
+    state = orchestrator.handle_verification_result(
+        True,
+        "230 passed",
+    )
+
+    assert state == AgentState.COMPLETED
+    assert run.state == AgentState.COMPLETED
+    assert orchestrator.last_test_output == "230 passed"
+
+
+def test_failed_verification_enters_analysis():
+    run = AgentRun(task_id="task-1")
+    orchestrator = AgentOrchestrator(run)
+
+    orchestrator.start()
+    orchestrator.begin_execution()
+    orchestrator.begin_testing()
+
+    state = orchestrator.handle_verification_result(
+        False,
+        "1 failed",
+    )
+
+    assert state == AgentState.ANALYZING
+    assert run.state == AgentState.ANALYZING
+    assert orchestrator.last_test_output == "1 failed"
+
+
 def test_failed_test_can_enter_analysis_and_repair():
     run = AgentRun(task_id="task-1")
     orchestrator = AgentOrchestrator(run)

@@ -427,16 +427,17 @@ Die erste technische Implementierung befindet sich in
 
 #### Aktuell betroffene Dateien
 
-- `scripts/update_docs.py`
-- `tests/test_update_docs.py`
+- `forgeai/ai/agent_orchestrator.py`
+- `forgeai/ui/main_window.py`
+- `tests/test_agent_orchestrator.py`
 
 #### Letzte relevante Commits
 
-- `95be02f (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: repair documentation encoding and current state`
+- `c74ed71 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: add deterministic agent status to documentation`
+- `95be02f fix: repair documentation encoding and current state`
 - `60f9771 chore: synchronize project documentation and tooling`
 - `aed8740 fix: stabilize planner reviewer workflow`
 - `d5f58d3 fix: stabilize agent JSON workflow`
-- `2c11acb fix: refine chat prompt routing`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell

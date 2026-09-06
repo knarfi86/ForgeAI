@@ -260,6 +260,25 @@ class AgentOrchestrator:
         self._record_reality_state("analysis")
         return self.run.state
 
+    def handle_verification_result(
+        self,
+        success: bool,
+        test_output: str = "",
+    ) -> AgentState:
+        """Verarbeitet das Ergebnis des technischen Verifikationslaufs."""
+        if self.run.state != AgentState.TESTING:
+            raise RuntimeError(
+                "Das Verifikationsergebnis kann nur im Zustand "
+                "'testing' verarbeitet werden."
+            )
+
+        self.last_test_output = test_output
+
+        if success:
+            return self.complete()
+
+        return self.begin_analysis()
+
     def analyze(
         self,
         task: AgentTask,
