@@ -143,89 +143,77 @@ liefert zusätzliche Interpretation, Prüfung und Verbesserung.
 
 ## Mehrstufiger Coding-Agent
 
-### Zielbild
+### Aktueller Status
 
-Der Coding-Agent soll Änderungen nicht nur generieren, sondern deren Lösungsweg
-kritisch prüfen, die Umsetzung verifizieren und bei Fehlern gezielt reparieren.
+Der Mehrschritt-Agent ist nicht mehr vollständig geplant. Die zentralen
+Agent-Komponenten sind implementiert und getestet. Die verbleibende Arbeit
+betrifft vor allem die vollständige End-to-End-Integration.
 
-Der geplante Ablauf lautet:
+### Implementiert
+
+- Planner für strukturierte Änderungspl?ne
+- Review-Komponente für kritische Gegenprüfung
+- `AgentRun` und `AgentState`
+- konfigurierbare Review-Grenze über `AgentRun`
+- Benutzerfreigabe im Agentenworkflow
+- `AgentVerificationWorker`
+- Fehleranalyse über `AgentAnalyzer`
+- Reparaturplanung über `AgentRepairer`
+- Reparatur-Review
+- begrenzte Reparaturversuche
+- `AgentOrchestrator`
+- `AgentRecoveryWorker`
+- Review-Entscheidungen `APPROVE`, `REVISE` und `REJECT`
+- Reality-Projektion relevanter Laufzeit-Zustände
+
+### Teilintegriert
+
+- durchgängige Kopplung von AgentPlan und bestehendem ChangePreview-Workflow
+- vollständige Verkettung von Benutzerfreigabe, Apply und Verifikation
+- vollständige Rückf?hrung der Testergebnisse in die Agentensteuerung
+- vollständige End-to-End-Recovery über mehrere Reparaturdurchl?ufe
+
+### Aktuelle AgentRun-Defaults
+
+- `max_review_rounds = 3`
+- `max_repair_attempts = 3`
+
+Die technische Begrenzung liegt derzeit damit bei drei Review-Runden und
+drei Reparaturversuchen.
+
+### Zielworkflow
+
+Der Zielworkflow lautet:
 
 `PLAN`
-→ `REVIEW`
-→ `REVISE`
-→ `USER APPROVAL`
-→ `EXECUTE`
-→ `TEST`
-→ `ANALYZE`
-→ `REPAIR`
-→ `REVIEW`
-→ `EXECUTE`
-→ `TEST`
-→ ...
+? `REVIEW`
+? `REVISE`
+? `USER APPROVAL`
+? `EXECUTE`
+? `TEST`
+? `ANALYZE`
+? `REPAIR`
+? `REVIEW`
+? `EXECUTE`
+? `TEST`
+? ...
 
-### Review
+Review und Repair bleiben getrennte, optional steuerbare
+Verantwortlichkeiten.
 
-Die Review-Schleife ist optional.
+### Noch offene Integrationsarbeiten
 
-Konfiguration:
-
-- `review_enabled`: Standard `true`
-- `review_max_rounds`: Standard `2`
-- Minimum: `1`
-- Maximum: `7`
-
-Die Schleife endet vorzeitig, sobald der Plan akzeptiert wurde.
-
-Die Review prüft insbesondere Architektur, Anforderungen, Nebenwirkungen,
-Berechtigungen und Testabdeckung.
-
-### Repair
-
-Die Reparaturschleife ist ebenfalls optional.
-
-Konfiguration:
-
-- `repair_enabled`: Standard `true`
-- `repair_max_attempts`: Standard `2`
-- Minimum: `1`
-- Maximum: `7`
-
-Die Reparatur startet nur aufgrund eines konkreten Verifikationsergebnisses.
-
-### Tests
-
-Tests bleiben unabhängig von Review und Repair.
-
-ForgeAI soll mindestens folgende Zustände unterscheiden:
-
-- `PASS`
-- `FAIL`
-- `ERROR`
-- `SKIPPED`
-- `BLOCKED`
-
-Review darf deaktiviert werden, ohne die Tests zu deaktivieren.
-Repair darf ebenfalls unabhängig von den Tests aktiviert oder deaktiviert
-werden.
-
-### Geplante Komponenten
-
-- [ ] Planner für strukturierte Änderungspläne
-- [ ] Review-Komponente für kritische Gegenprüfung
-- [ ] konfigurierbare Review-Runden bis maximal 7
-- [ ] vollständige Deaktivierung der Review
-- [ ] Benutzerfreigabe zwischen Plan und Ausführung
-- [ ] standardisierter Verifikationslauf
-- [ ] Fehleranalyse nach fehlgeschlagenen Tests
-- [ ] Repair-Komponente
-- [ ] konfigurierbare Repair-Versuche bis maximal 7
-- [ ] vollständige Deaktivierung der automatischen Reparatur
-- [ ] erneute Review nach Reparatur
-- [ ] Speicherung von `task_id`, `review_round`, `execution_round`,
-      `repair_attempt` und `git_commit`
-- [ ] Speicherung der Roh-Testberichte
+- [ ] vollständige End-to-End-Verbindung von AgentPlan zu ChangePreview
+- [ ] vollständige automatische Ausführung nach akzeptiertem Plan
+- [ ] vollständige Rückkopplung von Testresultaten in den Orchestrator
+- [ ] vollständige Recovery-Ausführung über mehrere Reparaturrunden
+- [ ] persistente Nachvollziehbarkeit von `task_id`, `review_round`,
+      `execution_round`, `repair_attempt` und `git_commit`
+- [ ] Speicherung vollständiger Roh-Testberichte
 - [ ] UI für Review-, Test- und Reparaturverlauf
-- [ ] Unterstützung unterschiedlicher Modelle für getrennte Review-Runden
+- [ ] gezielte Unterstützung unterschiedlicher Modelle für getrennte
+      Review-Runden
+- [ ] vollständige ForgeBrain-Anbindung des Agentenverlaufs
 
-Die Rundengrenzen werden als Konfiguration umgesetzt und nicht fest in die
-einzelnen Agent-Komponenten eingebaut.
+Die Rundengrenzen bleiben konfigurierbar und werden nicht fest in einzelne
+Agent-Komponenten eingebaut.

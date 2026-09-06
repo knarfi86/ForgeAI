@@ -73,11 +73,13 @@ def test_update_docs_updates_auto_blocks_and_is_idempotent():
         "<!-- FORGE:AUTO:CURRENT_STATE:END -->",
     )
 
-    assert "forgeai/ai/agent_planner.py" in current_state_block
-    assert "forgeai/ai/agent_reviewer.py" in current_state_block
-    assert "forgeai/ui/main_window.py" not in current_state_block
+    # Der Test darf nicht von zufälligen bzw. historischen Working-Tree-Dateien
+    # abhängen. Dokumentationsdateien selbst dürfen nicht als ProjektÄnderungen
+    # im Auto-Block erscheinen.
     assert "- `ARCHITECTURE.md`" not in current_state_block
     assert "- `docs/CURRENT_STATE.md`" not in current_state_block
+    assert "#### Teststand" in current_state_block
+    assert "#### Letzte relevante Commits" in current_state_block
 
     snapshots = {
         path: path.read_bytes()

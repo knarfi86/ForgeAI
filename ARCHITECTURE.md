@@ -319,10 +319,13 @@ Dabei werden Testergebnis und Fehlerursache analysiert. Daraus entsteht ein
 neuer Reparaturvorschlag, der vor der erneuten Ausführung wiederum geprüft
 werden kann.
 
-Vorgesehene Einstellungen:
+Vorgesehene bzw. teilweise umgesetzte Einstellungen:
 
-- `repair_enabled`: `true` oder `false`
-- `repair_max_attempts`: Minimum `1`, Standard `2`, Maximum `7`
+- `repair_enabled`: über den Workflow steuerbar
+- `max_repair_attempts`: aktuell `3` in `AgentRun`
+
+Eine vollständig externe Konfiguration mit frei wählbarer Grenze bis sieben
+Versuchen bleibt eine weitere Ausbaustufe.
 
 Auch hier gilt: Das Maximum von sieben ist eine Sicherheitsgrenze. Der Zyklus
 endet früher, wenn die Tests erfolgreich sind oder keine sinnvolle Reparatur
@@ -365,7 +368,7 @@ Vorgesehene Teststatus:
 Die Rohdaten der Testausführung sollen für spätere Analyse und Reparatur
 erhalten bleiben.
 
-### Geplanter Verantwortungszuschnitt
+### Verantwortungszuschnitt
 
 `Planner`
 → erstellt den Änderungsplan
@@ -396,6 +399,14 @@ Der tatsächliche Schreibzugriff bleibt zentral kontrolliert.
 
 ## Agent Reality Layer
 
+### Implementierungsstatus
+
+Der Reality Layer ist als technische Integrationsschicht teilweise umgesetzt.
+Die Projektionen von `AgentTask` und `AgentRun` sowie die Zustandsereignisse
+sind implementiert. Die vollständige Anbindung aller Agent-, Context-,
+Knowledge-, Authority- und Verification-Komponenten bleibt ein separater
+Integrationsschritt.
+
 Der Agent Reality Layer stellt eine modellunabhängige strukturierte Sicht auf
 Task, Laufzeitstatus, Kontext, Wissen, Berechtigungen, Beobachtungen,
 Evidenz, Entscheidungen, Aktionen und Verifikation bereit.
@@ -416,17 +427,17 @@ Die erste technische Implementierung befindet sich in
 
 #### Aktuell betroffene Dateien
 
-- `forgeai/ai/agent_planner.py`
-- `forgeai/ai/agent_reviewer.py`
+- `ROADMAP.md`
+- `scripts/update_docs.py`
 - `tests/test_update_docs.py`
 
 #### Letzte relevante Commits
 
-- `d5f58d3 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: stabilize agent JSON workflow`
+- `aed8740 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: stabilize planner reviewer workflow`
+- `d5f58d3 fix: stabilize agent JSON workflow`
 - `2c11acb fix: refine chat prompt routing`
 - `3ff6c12 chore: refine automatic documentation synchronization`
 - `c24021d chore: automate documentation synchronization`
-- `bf80286 chore: automate encoding checks`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell

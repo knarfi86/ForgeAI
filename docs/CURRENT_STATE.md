@@ -117,7 +117,7 @@ Der Projektkontext wird durch `AIContextProvider` begrenzt und nur aus explizit 
 
 ## Dokumentationsstand
 
-Die Dokumentation wurde zuletzt gegen den aktuellen Code von `forgeai-dev` geprüft.
+Die Dokumentation wurde zuletzt gegen den aktuellen Code des Branches `temp/agent-workflow-current` geprüft.
 
 Aktuell synchronisiert:
 
@@ -256,13 +256,21 @@ verwenden damit dieselbe zentrale Ollama-Schnittstelle.
 
 ## Verifizierter Teststand
 
-Am 2. September 2026 wurde die vollständige lokale Testsuite erfolgreich ausgeführt.
+Der zuletzt vollständig ausgeführte und verifizierte Testlauf stammt vom
+2. September 2026.
 
 - `compileall`: PASS
 - `git diff --check`: PASS
 - `pytest`: **207/207 PASS**
 - Python: 3.11.9
 - pytest: 9.1.1
+
+Diese Angaben beschreiben den zuletzt tatsächlich ausgeführten
+vollständigen PASS-Testlauf.
+
+Der automatisch synchronisierte Dokumentationsblock kann inzwischen eine
+höhere Anzahl gesammelter Tests ausweisen. Diese Zahl beschreibt die aktuell
+erkannte Testmenge und ist nicht automatisch ein bestätigter PASS-Lauf.
 
 Die Tests umfassen unter anderem Agent Contracts, Agent State, Agent Planner,
 Agent Reviewer, Agent Orchestrator, ModelRouter, OllamaProvider, OllamaClient,
@@ -271,8 +279,11 @@ ProjectAnalyzer und FileIndexer.
 
 ## Agentenstatus
 
-Der Planungs- und Review-Rahmen umfasst inzwischen auch die
-Verifikation, Fehleranalyse und Reparaturplanung.
+Der Agentenbereich ist technisch weitgehend implementiert, befindet sich aber
+noch in der Integrationsphase.
+
+Die einzelnen Komponenten für Planung, Review, Analyse, Verifikation und
+Reparatur existieren und sind durch eigene Tests abgesichert.
 
 Implementiert sind:
 
@@ -285,33 +296,35 @@ Implementiert sind:
 - `AgentVerificationWorker`
 - `AgentAnalyzer`
 - `AgentRepairer`
+- `AgentRecoveryWorker`
 - `ANALYZING`-Zustand
 - `REPAIRING`-Zustand
 - Reparaturplan-Review
 - erneute Reparaturversuche nach `REVISE`
 - Abbruch bei `REJECT`
-- Übergang eines akzeptierten Reparaturplans zur Benutzerfreigabe
+- übergang eines akzeptierten Reparaturplans zur Benutzerfreigabe
 - Begrenzung der Reparaturversuche über `AgentRun`
 - optionaler externer Planner als rein beratende Quelle
 
-Der aktuelle Recovery-Ablauf ist:
+Aktuelle Standardwerte in `AgentRun` sind:
 
-`AgentPlan`
-→ Review
-→ `ChangePreview`
-→ Benutzerbestätigung
-→ `WorkspaceTools.apply`
-→ Tests
-→ Fehleranalyse
-→ Reparaturplan
-→ Review
-→ ggf. weiterer Reparaturversuch
-→ erneute Ausführung
+- `max_review_rounds = 3`
+- `max_repair_attempts = 3`
 
-Die vollständige End-to-End-Kopplung des Agentenplans mit dem bestehenden
-Änderungsworkflow und der automatischen Ausführung ist noch nicht
-abgeschlossen. Die einzelnen Recovery-Komponenten und die
-Reparatur-Review-Schleife sind jedoch implementiert und getestet.
+### Status der Integration
+
+Implementiert und getestet sind die einzelnen Agenten- und
+Recovery-Komponenten.
+
+Teilintegriert ist die vollständige End-to-End-Verkettung des Agentenplans
+mit dem bestehenden ChangePreview-, Apply- und Test-Workflow.
+
+Damit gilt:
+
+- **Agent-Komponenten:** implementiert
+- **Recovery-Komponenten:** implementiert
+- **End-to-End-Agentenworkflow:** teilweise integriert
+
 
 ## Dokumentationsregel
 
@@ -415,8 +428,8 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Aktuell geänderte Dateien
 
-- `forgeai/ai/agent_planner.py`
-- `forgeai/ai/agent_reviewer.py`
+- `ROADMAP.md`
+- `scripts/update_docs.py`
 - `tests/test_update_docs.py`
 
 #### Teststand
@@ -425,35 +438,23 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Aktueller Plan
 
-- vollständige Tests für `create`
-- vollständige Tests für `create_directory`
-- vollständige Tests für `replace`
-- Tests für nicht freigegebene Pfade
-- Tests für Session-Freigaben
-- Tests für bestätigte und nicht bestätigte Schreibvorgänge
-- Tests für Projektwechsel und das Löschen von Session-Freigaben
-- detaillierte Git-Änderungsansicht
-- verbesserte Diff-Darstellung
-- klare Zuordnung zwischen vorgeschlagener und tatsächlich angewendeter Änderung
-- interaktive Bearbeitung von Projektdateien
-- berechtigungsgeprüfte Änderungen
-- konsistente Verbindung zwischen Editor, ChangePreview und WorkspaceTools
-- detaillierte Benutzeroberfläche zur Pflege und Auswertung des Projektwissens
-- bessere Darstellung von Projektstruktur und Abhängigkeiten
-- lokale Projektanalyse als optionaler, klar abgegrenzter Prozess
-- weitere Optimierung des Analyse-Kontexts
-- bessere Kontrolle über Analyseumfang und Kontextbudget
-- weitere Werkzeuge für Lesen, Suchen und Analysieren
-- konsequente Beachtung des jeweiligen Projektmodus
-- klare Trennung zwischen Lesezugriff, Änderungsvorschlag und Schreibzugriff
+- [ ] vollständige End-to-End-Verbindung von AgentPlan zu ChangePreview
+- [ ] vollständige automatische Ausführung nach akzeptiertem Plan
+- [ ] vollständige Rückkopplung von Testresultaten in den Orchestrator
+- [ ] vollständige Recovery-Ausführung über mehrere Reparaturrunden
+- [ ] persistente Nachvollziehbarkeit von `task_id`, `review_round`, `execution_round`, `repair_attempt` und `git_commit`
+- [ ] Speicherung vollständiger Roh-Testberichte
+- [ ] UI für Review-, Test- und Reparaturverlauf
+- [ ] gezielte Unterstützung unterschiedlicher Modelle für getrennte Review-Runden
+- [ ] vollständige ForgeBrain-Anbindung des Agentenverlaufs
 
 #### Letzte relevante Commits
 
-- `d5f58d3 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: stabilize agent JSON workflow`
+- `aed8740 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: stabilize planner reviewer workflow`
+- `d5f58d3 fix: stabilize agent JSON workflow`
 - `2c11acb fix: refine chat prompt routing`
 - `3ff6c12 chore: refine automatic documentation synchronization`
 - `c24021d chore: automate documentation synchronization`
-- `bf80286 chore: automate encoding checks`
 
 Dieser Abschnitt wird automatisch aus dem lokalen Git- und Teststand
 sowie aus der aktuellen ROADMAP.md erzeugt.

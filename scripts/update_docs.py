@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import subprocess
 import sys
 
@@ -21,9 +22,23 @@ def run(command: list[str]) -> str:
     return result.stdout.rstrip(chr(13)+chr(10))
 
 
+def get_project_python() -> str:
+    if os.name == "nt":
+        candidate = ROOT / ".venv" / "Scripts" / "python.exe"
+    else:
+        candidate = ROOT / ".venv" / "bin" / "python"
+
+    if candidate.is_file():
+        return str(candidate)
+
+    return sys.executable
+
+
 def count_tests() -> int:
+    python_executable = get_project_python()
+
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q"],
+        [python_executable, "-m", "pytest", "--collect-only", "-q"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -90,16 +105,67 @@ def get_current_plan() -> list[str]:
         return ["- ROADMAP.md nicht gefunden."]
 
     content = roadmap.read_text(encoding="utf-8")
-
     lines = content.splitlines()
-    plan = []
 
+    def collect_checkboxes(start_heading: str) -> list[str]:
+        items = []
+        capture = False
+        current = None
+
+        for line in lines:
+            stripped = line.strip()
+
+            if stripped == start_heading:
+                capture = True
+                current = None
+                continue
+
+            if capture and stripped.startswith("## "):
+                break
+
+            if capture and stripped.startswith("### "):
+                if stripped != start_heading:
+                    break
+
+            if not capture:
+                continue
+
+            if stripped.startswith("- [ ]"):
+                if current is not None:
+                    items.append(current)
+
+                current = stripped
+                continue
+
+            # Nur eingerueckte Fortsetzungszeilen gehoeren zum vorherigen
+            # Markdown-Listenpunkt.
+            if current is not None and line.startswith((" ", "\t")) and stripped:
+                current += " " + stripped
+                continue
+
+            if current is not None and stripped:
+                items.append(current)
+                current = None
+
+        if current is not None:
+            items.append(current)
+
+        return items
+
+    # Aktuelle Roadmap-Struktur
+    plan = collect_checkboxes("### Noch offene Integrationsarbeiten")
+
+    if plan:
+        return plan
+
+    # Klassische Roadmap-Struktur
+    plan = []
     capture = False
 
     for line in lines:
         stripped = line.strip()
 
-        if stripped.startswith("## Nächste Ausbaustufen"):
+        if stripped.startswith("## N\u00e4chste Ausbaustufen"):
             capture = True
             continue
 
@@ -109,10 +175,10 @@ def get_current_plan() -> list[str]:
         if capture and stripped.startswith("- "):
             plan.append(stripped)
 
-    if not plan:
-        return ["- Aktueller Plan ist in ROADMAP.md dokumentiert."]
+    if plan:
+        return plan
 
-    return plan
+    return ["- Aktueller Plan ist in ROADMAP.md dokumentiert."]
 
 
 def build_changed_files_section(files: list[str]) -> str:
