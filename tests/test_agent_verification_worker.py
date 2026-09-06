@@ -1,4 +1,4 @@
-﻿from forgeai.ai.agent_ui_worker import AgentVerificationWorker
+from forgeai.ai.agent_ui_worker import AgentVerificationWorker
 
 
 def test_verification_worker_is_constructible(tmp_path):
@@ -18,4 +18,4 @@ def test_verification_worker_requires_existing_test_runner(tmp_path):
     worker.run()
 
     assert errors
-    assert "Test Runner nicht gefunden" in errors[0]
+    assert "Kein unterstuetzter Test Runner" in errors[0]

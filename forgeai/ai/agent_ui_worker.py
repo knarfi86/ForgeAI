@@ -1,6 +1,5 @@
 ﻿from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -15,6 +14,7 @@ from .agent_state import AgentRun, AgentState
 from .model_router import ModelRouter
 from .ollama_client import OllamaClient
 from .ollama_provider import OllamaProvider
+from forgeai.core.test_runner import ProjectTestRunner
 
 
 class AgentWorkflowWorker(QThread):
@@ -129,43 +129,15 @@ class AgentVerificationWorker(QThread):
 
     def run(self) -> None:
         try:
-            script = self.project_path / "scripts" / "run_tests.ps1"
+            result = ProjectTestRunner(self.project_path).run()
 
-            if not script.is_file():
-                raise FileNotFoundError(
-                    f"Test Runner nicht gefunden: {script}"
-                )
-
-            completed = subprocess.run(
-                [
-                    "powershell.exe",
-                    "-NoProfile",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    str(script),
-                ],
-                cwd=str(self.project_path),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-
-            self.exit_code = completed.returncode
-            self.test_output = (
-                completed.stdout
-                + (
-                    "\n\n" + completed.stderr
-                    if completed.stderr
-                    else ""
-                )
-            ).strip()
+            self.exit_code = result.exit_code
+            self.test_output = result.output
 
             self.completed.emit(
-                completed.returncode == 0,
-                completed.returncode,
-                self.test_output,
+                result.success,
+                result.exit_code,
+                result.output,
             )
 
         except Exception as error:
