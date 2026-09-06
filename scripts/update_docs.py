@@ -34,6 +34,149 @@ def get_project_python() -> str:
     return sys.executable
 
 
+
+def get_agent_status() -> list[str]:
+    """Erzeugt einen deterministischen Agentenstatus aus dem Quellcode."""
+    import ast
+
+    def defines(path: Path, *, classes=(), functions=()) -> bool:
+        if not path.is_file():
+            return False
+
+        try:
+            source = path.read_text(encoding="utf-8")
+            source = source.lstrip("\ufeff")
+            tree = ast.parse(source)
+        except (OSError, SyntaxError, UnicodeDecodeError):
+            return False
+
+        class_names = {
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef)
+        }
+
+        function_names = {
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+
+        return (
+            all(name in class_names for name in classes)
+            and all(name in function_names for name in functions)
+        )
+
+    def contains(path: Path, *needles: str) -> bool:
+        if not path.is_file():
+            return False
+
+        try:
+            source = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return False
+
+        return all(needle in source for needle in needles)
+
+    agent_dir = ROOT / "forgeai" / "ai"
+    core_dir = ROOT / "forgeai" / "core"
+
+    components = [
+        ("AgentRun", agent_dir / "agent_state.py", ("AgentRun",)),
+        ("AgentPlanner", agent_dir / "agent_planner.py", ("AgentPlanner",)),
+        ("AgentReviewer", agent_dir / "agent_reviewer.py", ("AgentReviewer",)),
+        ("AgentOrchestrator", agent_dir / "agent_orchestrator.py", ("AgentOrchestrator",)),
+        ("AgentVerificationWorker", agent_dir / "agent_ui_worker.py", ("AgentVerificationWorker",)),
+        ("AgentAnalyzer", agent_dir / "agent_analyzer.py", ("AgentAnalyzer",)),
+        ("AgentRepairer", agent_dir / "agent_repairer.py", ("AgentRepairer",)),
+        ("AgentRecoveryWorker", agent_dir / "agent_ui_worker.py", ("AgentRecoveryWorker",)),
+        ("AgentReality", core_dir / "agent_reality.py", ("AgentReality",)),
+    ]
+
+    result = []
+
+    for name, path, classes in components:
+        present = defines(path, classes=classes)
+        status = "implementiert" if present else "nicht nachgewiesen"
+        result.append(f"- `{name}`: **{status}**")
+
+    orchestrator = agent_dir / "agent_orchestrator.py"
+    worker = agent_dir / "agent_ui_worker.py"
+
+    plan_review_approval = (
+        defines(
+            orchestrator,
+            functions=(
+                "plan",
+                "begin_review",
+                "handle_review_result",
+                "request_approval",
+            ),
+        )
+        and contains(
+            worker,
+            "orchestrator.plan(",
+            "orchestrator.begin_review(",
+            "orchestrator.handle_review_result(",
+            "orchestrator.request_approval(",
+        )
+    )
+
+    execution_testing = (
+        defines(
+            orchestrator,
+            functions=("approve", "begin_execution", "begin_testing"),
+        )
+        and defines(
+            worker,
+            classes=("AgentVerificationWorker",),
+        )
+    )
+
+    recovery_chain = contains(
+        worker,
+        "self.orchestrator.begin_analysis()",
+        "self.orchestrator.analyze(",
+        "self.orchestrator.begin_repair()",
+        "self.orchestrator.repair(",
+        "self.orchestrator.begin_review()",
+        "self.orchestrator.handle_repair_review_result(",
+    )
+
+    reality_integration = contains(
+        orchestrator,
+        "reality: AgentReality | None = None",
+        "self._record_reality_state(",
+    )
+
+    result.extend(
+        [
+            (
+                "- `Plan -> Review -> Approval`: **integriert**"
+                if plan_review_approval
+                else "- `Plan -> Review -> Approval`: **nicht nachgewiesen**"
+            ),
+            (
+                "- `Approval -> Execute -> Test`: **teilintegriert**"
+                if execution_testing
+                else "- `Approval -> Execute -> Test`: **nicht nachgewiesen**"
+            ),
+            (
+                "- `Test -> Analyze -> Repair -> Review`: **integriert im Recovery-Pfad**"
+                if recovery_chain
+                else "- `Test -> Analyze -> Repair -> Review`: **nicht nachgewiesen**"
+            ),
+            "- `vollstaendiger End-to-End-Agentenworkflow`: **teilintegriert**",
+            (
+                "- `AgentReality-Anbindung`: **teilintegriert**"
+                if reality_integration
+                else "- `AgentReality-Anbindung`: **nicht integriert**"
+            ),
+        ]
+    )
+
+    return result
+
 def count_tests() -> int:
     python_executable = get_project_python()
 
@@ -203,6 +346,7 @@ tests = count_tests()
 changed_files = get_changed_files()
 recent_commits = get_recent_commits()
 current_plan = get_current_plan()
+agent_status = get_agent_status()
 
 current_state_body = """### Automatisch synchronisierter Arbeitsstand
 
@@ -217,6 +361,10 @@ current_state_body = """### Automatisch synchronisierter Arbeitsstand
 #### Aktueller Plan
 
 """ % tests + build_plan_section(current_plan) + """
+
+#### Agentenstatus
+
+""" + "\n".join(agent_status) + """
 
 #### Letzte relevante Commits
 

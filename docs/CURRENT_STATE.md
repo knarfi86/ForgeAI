@@ -428,7 +428,8 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Aktuell geänderte Dateien
 
-- `ROADMAP.md`
+- `scripts/update_docs.py`
+- `tests/test_update_docs.py`
 
 #### Teststand
 
@@ -446,13 +447,30 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 - [ ] gezielte Unterstützung unterschiedlicher Modelle für getrennte Review-Runden
 - [ ] vollständige ForgeBrain-Anbindung des Agentenverlaufs
 
+#### Agentenstatus
+
+- `AgentRun`: **implementiert**
+- `AgentPlanner`: **implementiert**
+- `AgentReviewer`: **implementiert**
+- `AgentOrchestrator`: **implementiert**
+- `AgentVerificationWorker`: **implementiert**
+- `AgentAnalyzer`: **implementiert**
+- `AgentRepairer`: **implementiert**
+- `AgentRecoveryWorker`: **implementiert**
+- `AgentReality`: **implementiert**
+- `Plan -> Review -> Approval`: **integriert**
+- `Approval -> Execute -> Test`: **teilintegriert**
+- `Test -> Analyze -> Repair -> Review`: **integriert im Recovery-Pfad**
+- `vollstaendiger End-to-End-Agentenworkflow`: **teilintegriert**
+- `AgentReality-Anbindung`: **teilintegriert**
+
 #### Letzte relevante Commits
 
-- `60f9771 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) chore: synchronize project documentation and tooling`
+- `95be02f (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: repair documentation encoding and current state`
+- `60f9771 chore: synchronize project documentation and tooling`
 - `aed8740 fix: stabilize planner reviewer workflow`
 - `d5f58d3 fix: stabilize agent JSON workflow`
 - `2c11acb fix: refine chat prompt routing`
-- `3ff6c12 chore: refine automatic documentation synchronization`
 
 Dieser Abschnitt wird automatisch aus dem lokalen Git- und Teststand
 sowie aus der aktuellen ROADMAP.md erzeugt.

@@ -427,15 +427,16 @@ Die erste technische Implementierung befindet sich in
 
 #### Aktuell betroffene Dateien
 
-- `ROADMAP.md`
+- `scripts/update_docs.py`
+- `tests/test_update_docs.py`
 
 #### Letzte relevante Commits
 
-- `60f9771 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) chore: synchronize project documentation and tooling`
+- `95be02f (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: repair documentation encoding and current state`
+- `60f9771 chore: synchronize project documentation and tooling`
 - `aed8740 fix: stabilize planner reviewer workflow`
 - `d5f58d3 fix: stabilize agent JSON workflow`
 - `2c11acb fix: refine chat prompt routing`
-- `3ff6c12 chore: refine automatic documentation synchronization`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell

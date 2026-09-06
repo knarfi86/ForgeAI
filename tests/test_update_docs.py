@@ -79,6 +79,19 @@ def test_update_docs_updates_auto_blocks_and_is_idempotent():
     assert "- `ARCHITECTURE.md`" not in current_state_block
     assert "- `docs/CURRENT_STATE.md`" not in current_state_block
     assert "#### Teststand" in current_state_block
+    assert "#### Agentenstatus" in current_state_block
+    assert "AgentRun`: **implementiert**" in current_state_block
+    assert "AgentPlanner`: **implementiert**" in current_state_block
+    assert "AgentReviewer`: **implementiert**" in current_state_block
+    assert "AgentOrchestrator`: **implementiert**" in current_state_block
+    assert "AgentVerificationWorker`: **implementiert**" in current_state_block
+    assert "AgentAnalyzer`: **implementiert**" in current_state_block
+    assert "AgentRepairer`: **implementiert**" in current_state_block
+    assert "AgentRecoveryWorker`: **implementiert**" in current_state_block
+    assert "AgentReality`: **implementiert**" in current_state_block
+    assert "AgentReality-Anbindung`: **teilintegriert**" in current_state_block
+    assert "Plan -> Review -> Approval`: **integriert**" in current_state_block
+    assert "vollstaendiger End-to-End-Agentenworkflow`: **teilintegriert**" in current_state_block
     assert "#### Letzte relevante Commits" in current_state_block
 
     snapshots = {
