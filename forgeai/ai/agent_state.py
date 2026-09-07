@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import logging
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+
+
+logger = logging.getLogger(__name__)
 
 
 class AgentState(str, Enum):
@@ -39,14 +44,26 @@ class AgentRun:
         if not isinstance(new_state, AgentState):
             raise ValueError(f"Ungültiger AgentState: {new_state!r}")
 
+        previous_state = self.state.value
         self.state = new_state
-        self.history.append(
-            {
-                "state": new_state.value,
-                "review_round": self.review_round,
-                "execution_round": self.execution_round,
-                "repair_attempt": self.repair_attempt,
-            }
+
+        event = {
+            "state": new_state.value,
+            "review_round": self.review_round,
+            "execution_round": self.execution_round,
+            "repair_attempt": self.repair_attempt,
+        }
+        self.history.append(event)
+
+        logger.info(
+            "Agent state transition: task=%s %s -> %s "
+            "review=%s execution=%s repair=%s",
+            self.task_id,
+            previous_state,
+            new_state.value,
+            self.review_round,
+            self.execution_round,
+            self.repair_attempt,
         )
 
     def start_review(self) -> int:

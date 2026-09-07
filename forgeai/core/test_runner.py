@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import shutil
 import subprocess
@@ -17,20 +17,59 @@ class TestRunResult:
 class ProjectTestRunner:
     """Detect and execute a suitable test runner for a local project."""
 
-    def __init__(self, project_path: str | Path) -> None:
+    DEFAULT_TIMEOUT_SECONDS = 300
+
+    def __init__(
+        self,
+        project_path: str | Path,
+        timeout_seconds: int | float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> None:
         self.project_path = Path(project_path)
+        self.timeout_seconds = float(timeout_seconds)
+
+        if self.timeout_seconds <= 0:
+            raise ValueError("timeout_seconds muss größer als 0 sein.")
 
     def run(self) -> TestRunResult:
         runner_name, command = self._detect()
 
-        completed = subprocess.run(
-            command,
-            cwd=str(self.project_path),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=str(self.project_path),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=self.timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as error:
+            partial_output = ""
+
+            if error.stdout:
+                partial_output += str(error.stdout)
+
+            if error.stderr:
+                if partial_output:
+                    partial_output += "\n\n"
+                partial_output += str(error.stderr)
+
+            timeout_message = (
+                f"Testlauf mit Runner '{runner_name}' hat das Zeitlimit "
+                f"von {self.timeout_seconds:g} Sekunden überschritten."
+            )
+
+            output = (
+                f"{timeout_message}\n\n"
+                f"{partial_output.strip()}"
+            ).strip()
+
+            return TestRunResult(
+                success=False,
+                exit_code=-1,
+                output=output,
+                runner=runner_name,
+            )
 
         output = (
             completed.stdout
@@ -122,6 +161,7 @@ class ProjectTestRunner:
             text=True,
             encoding="utf-8",
             errors="replace",
+            timeout=10,
         )
 
         return completed.returncode == 0

@@ -428,14 +428,17 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Aktuell geänderte Dateien
 
-- `forgeai/ai/agent_ui_worker.py`
-- `tests/test_agent_verification_worker.py`
+- `forgeai/ai/agent_orchestrator.py`
+- `forgeai/ai/agent_state.py`
 - `forgeai/core/test_runner.py`
+- `forgeai/ui/main_window.py`
+- `tests/test_agent_orchestrator.py`
+- `tests/test_agent_recovery_ui.py`
 - `tests/test_project_test_runner.py`
 
 #### Teststand
 
-- Pytest-Testfaelle: **237**
+- Pytest-Testfaelle: **242**
 
 #### Aktueller Plan
 
@@ -468,11 +471,11 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Letzte relevante Commits
 
-- `106eb2f (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: connect agent verification to recovery`
+- `5af2d92 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: add project test runner detection`
+- `106eb2f feat: connect agent verification to recovery`
 - `044cd99 feat: connect agent apply to verification`
 - `c74ed71 feat: add deterministic agent status to documentation`
 - `95be02f fix: repair documentation encoding and current state`
-- `60f9771 chore: synchronize project documentation and tooling`
 
 Dieser Abschnitt wird automatisch aus dem lokalen Git- und Teststand
 sowie aus der aktuellen ROADMAP.md erzeugt.

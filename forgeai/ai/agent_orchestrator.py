@@ -352,6 +352,10 @@ class AgentOrchestrator:
         self._record_reality_state("completed")
         return self.run.state
 
+    def complete_without_changes(self) -> AgentState:
+        """Beendet einen Lauf erfolgreich, wenn keine änderungen erforderlich sind."""
+        return self.complete()
+
     def fail(self) -> AgentState:
         """Markiert den Lauf als endgültig fehlgeschlagen."""
         self.run.fail()

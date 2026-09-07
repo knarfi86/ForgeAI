@@ -56,3 +56,39 @@ def test_falls_back_to_unittest(tmp_path, monkeypatch):
 
     assert name == "unittest"
     assert command[-4:] == ["unittest", "discover", "-s", "tests"]
+
+def test_returns_failure_after_timeout(tmp_path, monkeypatch):
+    import sys
+
+    monkeypatch.setattr(
+        ProjectTestRunner,
+        "_detect",
+        lambda self: (
+            "python",
+            [
+                sys.executable,
+                "-c",
+                "import time; print('started', flush=True); time.sleep(2)",
+            ],
+        ),
+    )
+
+    result = ProjectTestRunner(
+        tmp_path,
+        timeout_seconds=0.1,
+    ).run()
+
+    assert result.success is False
+    assert result.exit_code == -1
+    assert result.runner == "python"
+    assert "Zeitlimit" in result.output
+    assert "started" in result.output
+
+
+def test_rejects_non_positive_timeout(tmp_path):
+    try:
+        ProjectTestRunner(tmp_path, timeout_seconds=0)
+    except ValueError as error:
+        assert "timeout_seconds" in str(error)
+    else:
+        raise AssertionError("timeout_seconds must reject zero")

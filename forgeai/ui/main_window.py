@@ -1196,6 +1196,35 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
         dialog_title: str,
         dialog_intro: str,
     ) -> None:
+        if not plan.proposed_changes:
+            if self._agent_orchestrator is not None:
+                try:
+                    self._agent_orchestrator.complete_without_changes()
+                except RuntimeError as error:
+                    self.logger.error(
+                        "Could not complete no-op agent plan: %s",
+                        error,
+                    )
+                    self._set_agent_status(
+                        "Agentenlauf konnte nicht abgeschlossen werden"
+                    )
+                    return
+
+            self.input_bar.set_busy(False)
+            self._set_agent_status("Keine änderungen erforderlich")
+
+            if self.chat_view.pending:
+                self.chat_view.pending.set_content(
+                    "### Agent-Plan\n\n"
+                    f"**Zusammenfassung:** {plan.summary}\n\n"
+                    "**Geplante änderungen:**\n"
+                    "- Keine konkreten änderungen\n\n"
+                    f"**Begründung:** {plan.rationale}\n\n"
+                    "*Keine Dateiänderung erforderlich.*"
+                )
+
+            return
+
         changes = []
         for change in plan.proposed_changes:
             action = change.get("action", "unbekannt")
@@ -1266,12 +1295,25 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
         orchestrator = self._agent_orchestrator
         if orchestrator is not None and orchestrator.run.state == AgentState.TESTING:
             try:
-                orchestrator.handle_verification_result(
+                state = orchestrator.handle_verification_result(
                     False,
                     f"Verification worker error: {error}",
                 )
-            except RuntimeError:
-                pass
+
+                if state == AgentState.ANALYZING:
+                    self._set_agent_status(
+                        "Verifikationsfehler, Analyse erforderlich"
+                    )
+                    self._start_agent_recovery(
+                        f"Verification worker error: {error}"
+                    )
+                    return
+
+            except RuntimeError as processing_error:
+                self.logger.error(
+                    "Could not process verification worker failure: %s",
+                    processing_error,
+                )
 
         self._set_agent_status("Verifikationsfehler")
         self.logger.error(

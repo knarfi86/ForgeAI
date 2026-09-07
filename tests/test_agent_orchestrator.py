@@ -723,3 +723,14 @@ def test_review_limit_aborts_repeated_revision_cycle() -> None:
     with pytest.raises(RuntimeError, match="Review-Runden"):
         orchestrator.begin_review()
 
+
+def test_complete_without_changes_completes_run():
+    run = AgentRun(task_id="task-1")
+    orchestrator = AgentOrchestrator(run)
+
+    orchestrator.start()
+
+    state = orchestrator.complete_without_changes()
+
+    assert state == AgentState.COMPLETED
+    assert run.state == AgentState.COMPLETED

@@ -123,3 +123,80 @@ def test_recovery_finished_routes_plan_to_shared_approval(monkeypatch):
             "Der Agent hat den fehlgeschlagenen Test analysiert und einen Reparaturplan erstellt.",
         )
     ]
+
+
+def test_verification_worker_error_starts_recovery():
+    class _FakeOrchestrator:
+        run = SimpleNamespace(state=AgentState.TESTING)
+
+        def handle_verification_result(self, success, test_output):
+            assert success is False
+            assert test_output == "Verification worker error: runner timeout"
+            return AgentState.ANALYZING
+
+    window = _make_window(_FakeOrchestrator())
+
+    worker = _FakeWorker()
+    window._agent_verification_worker = worker
+
+    calls = []
+
+    def fake_start_recovery(test_output):
+        calls.append(test_output)
+
+    window._start_agent_recovery = fake_start_recovery
+
+    window._agent_verification_failed("runner timeout")
+
+    assert calls == ["Verification worker error: runner timeout"]
+    assert window._agent_verification_worker is None
+    assert worker.deleted is True
+    assert window.statuses[-1] == "Verifikationsfehler, Analyse erforderlich"
+
+
+
+def test_noop_agent_plan_completes_without_approval_or_coder(monkeypatch):
+    class _FakeOrchestrator:
+        def __init__(self):
+            self.completed = False
+            self.run = SimpleNamespace(state=AgentState.PLANNING)
+
+        def complete_without_changes(self):
+            self.completed = True
+            self.run.state = AgentState.COMPLETED
+            return AgentState.COMPLETED
+
+    orchestrator = _FakeOrchestrator()
+    window = _make_window(orchestrator)
+
+    window.chat_view = SimpleNamespace(pending=None)
+    window.chat_id = None
+
+    coder_calls = []
+    window._start_agent_coder_stream = lambda: coder_calls.append(True)
+
+    approval_calls = []
+    monkeypatch.setattr(
+        main_window_module.QMessageBox,
+        "question",
+        lambda *args, **kwargs: approval_calls.append(True),
+    )
+
+    plan = SimpleNamespace(
+        proposed_changes=[],
+        summary="Keine ?nderung erforderlich",
+        rationale="Die gew?nschte Pr?fung ist bereits vorhanden.",
+    )
+
+    window._request_agent_plan_approval(
+        plan,
+        dialog_title="Agent-Plan freigeben",
+        dialog_intro="Test",
+    )
+
+    assert orchestrator.completed is True
+    assert orchestrator.run.state == AgentState.COMPLETED
+    assert coder_calls == []
+    assert approval_calls == []
+    assert window.statuses[-1] == "Keine " + chr(0xE4) + "nderungen erforderlich"
+    assert window.input_bar.busy_values[-1] is False
