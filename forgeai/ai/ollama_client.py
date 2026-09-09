@@ -164,6 +164,7 @@ class OllamaClient:
         base_url: str,
         model_name: str,
         native_context: int | None,
+        hard_limit: int | None = None,
     ) -> dict:
         """Choose a conservative context size from hardware and model requirements."""
         hardware = self.get_hardware_info()
@@ -240,6 +241,17 @@ class OllamaClient:
             min(int(recommended), native),
         )
 
+        # Benutzerdefinierte ForgeAI-Kontextgrenze
+        if hard_limit is not None:
+            try:
+                hard_limit = int(hard_limit)
+            except (TypeError, ValueError):
+                hard_limit = 16000
+
+            hard_limit = max(8192, min(hard_limit, native))
+            recommended = min(recommended, hard_limit)
+            reason = f"ForgeAI hard context limit: {hard_limit}"
+
         return {
             "context_length": native,
             "recommended_context": recommended,
@@ -302,6 +314,7 @@ class OllamaClient:
         model: str | None = None,
         base_url: str | None = None,
         response_format: dict | str | None = None,
+            num_ctx: int | None = None,
     ) -> str:
         if not model:
             raise ValueError("Kein Ollama-Modell angegeben.")
@@ -316,6 +329,9 @@ class OllamaClient:
 
         if response_format is not None:
             payload["format"] = response_format
+
+        if num_ctx is not None:
+            payload["options"] = {"num_ctx": int(num_ctx)}
 
         request = urllib.request.Request(
             f"{self.local_url(target_url)}/api/chat",

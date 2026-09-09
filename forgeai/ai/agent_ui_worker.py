@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 
@@ -30,6 +30,7 @@ class AgentWorkflowWorker(QThread):
         model: str,
         base_url: str,
         review_enabled: bool = True,
+        num_ctx: int | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -38,6 +39,7 @@ class AgentWorkflowWorker(QThread):
         self.model = model
         self.base_url = base_url
         self.review_enabled = review_enabled
+        self.num_ctx = num_ctx
 
     def run(self) -> None:
         try:
@@ -45,6 +47,7 @@ class AgentWorkflowWorker(QThread):
             provider = OllamaProvider(
                 client=client,
                 base_url=self.base_url,
+                num_ctx=self.num_ctx,
             )
 
             router = ModelRouter()
@@ -158,6 +161,7 @@ class AgentRecoveryWorker(QThread):
         model: str,
         base_url: str,
         review_enabled: bool = True,
+        num_ctx: int | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -168,6 +172,7 @@ class AgentRecoveryWorker(QThread):
         self.model = model
         self.base_url = base_url
         self.review_enabled = review_enabled
+        self.num_ctx = num_ctx
 
     def run(self) -> None:
         try:
@@ -175,6 +180,7 @@ class AgentRecoveryWorker(QThread):
             provider = OllamaProvider(
                 client=client,
                 base_url=self.base_url,
+                num_ctx=self.num_ctx,
             )
 
             router = ModelRouter()

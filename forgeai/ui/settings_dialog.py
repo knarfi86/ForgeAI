@@ -50,6 +50,24 @@ class SettingsDialog(QDialog):
         self.project_mode.setCurrentText(settings.get("project_mode", "READ_ONLY"))
         layout.addRow("Projektmodus", self.project_mode)
 
+        # Kontextgröße
+        self.context_mode = QComboBox()
+        self.context_mode.addItems(["Automatisch", "Benutzerdefiniert"])
+        self.context_mode.setCurrentText(
+            "Automatisch"
+            if settings.get("context_mode", "custom") == "auto"
+            else "Benutzerdefiniert"
+        )
+        layout.addRow("Kontextmodus", self.context_mode)
+
+        self.context_limit = QSpinBox()
+        self.context_limit.setRange(8192, 131072)
+        self.context_limit.setSingleStep(1024)
+        self.context_limit.setValue(
+            int(settings.get("context_limit", "16000"))
+        )
+        layout.addRow("Max. Kontext (Tokens)", self.context_limit)
+
         # Buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)

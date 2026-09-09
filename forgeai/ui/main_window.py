@@ -195,6 +195,17 @@ class MainWindow(QMainWindow):
     def _save_setting(self, key: str, value: str) -> None:
         self.database.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
 
+    def _context_hard_limit(self) -> int | None:
+        if self._setting("context_mode", "custom").strip().lower() == "auto":
+            return None
+
+        try:
+            value = int(self._setting("context_limit", "16000"))
+        except (TypeError, ValueError):
+            value = 16000
+
+        return max(8192, min(value, 131072))
+
     def _restore_window(self) -> None:
         saved = self._setting("window_geometry", "")
         if saved:
@@ -355,6 +366,7 @@ class MainWindow(QMainWindow):
             self.ollama_url,
             self.model,
             model_context_length,
+            hard_limit=self._context_hard_limit(),
         )
 
         num_ctx = context_plan["recommended_context"]
@@ -444,6 +456,7 @@ class MainWindow(QMainWindow):
             self.ollama_url,
             self.model,
             model_context_length,
+            hard_limit=self._context_hard_limit(),
         )
         num_ctx = context_plan["recommended_context"]
         project_context_tokens = max(4_096, int(num_ctx * 0.55))
@@ -495,6 +508,7 @@ class MainWindow(QMainWindow):
             model=self.model,
             base_url=self.ollama_url,
             review_enabled=self.agent_review_enabled,
+            num_ctx=self._agent_num_ctx,
             parent=self,
         )
         self._agent_worker.completed.connect(self._agent_workflow_finished)
@@ -1146,6 +1160,7 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
             model=self.model,
             base_url=self.ollama_url,
             review_enabled=self.agent_review_enabled,
+            num_ctx=self._agent_num_ctx,
             parent=self,
         )
         self._agent_recovery_worker = worker
