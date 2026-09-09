@@ -49,6 +49,49 @@ class ProjectAnalyzer:
             "open_tasks": self._open_tasks(str(root)),
         }
 
+    def structure_summary(self, project_path: str | Path) -> dict:
+        """Return structural project metadata without file contents."""
+        root = self.filesystem.resolve(project_path)
+
+        records = self.database.fetchall(
+            "SELECT relative_path, file_type, size_bytes FROM project_files "
+            "WHERE project_path=? ORDER BY relative_path",
+            (str(root),),
+        )
+
+        folders = [
+            row["relative_path"]
+            for row in self.database.fetchall(
+                "SELECT relative_path FROM project_folders "
+                "WHERE project_path=? ORDER BY relative_path",
+                (str(root),),
+            )
+        ]
+
+        classes, imports, modules, graph = self._python_structure(root, records)
+        languages = sorted({row["file_type"] for row in records})
+
+        return {
+            "project_name": root.name,
+            "files": [
+                {
+                    "path": row["relative_path"],
+                    "type": row["file_type"],
+                    "size_bytes": row["size_bytes"],
+                }
+                for row in records
+            ],
+            "folders": folders,
+            "languages": languages,
+            "modules": modules,
+            "classes": classes,
+            "imports": imports,
+            "dependency_graph": dict(graph),
+            "git_repository": self.filesystem.is_directory(root / ".git"),
+            "file_count": len(records),
+            "folder_count": len(folders),
+        }
+
     def _documents(self, root: Path) -> dict[str, str]:
         return {name: self.filesystem.read_text(root / name) for name in self.DOCUMENTS
                 if self.filesystem.is_file(root / name)}

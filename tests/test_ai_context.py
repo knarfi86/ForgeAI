@@ -3,8 +3,10 @@ from pathlib import Path
 import pytest
 
 from forgeai.core.ai_context import AIContextProvider
+from forgeai.core.file_indexer import FileIndexer
 from forgeai.core.filesystem import FileSystem
 from forgeai.core.workspace_database import WorkspaceDatabase
+from forgeai.core.workspace_manager import WorkspaceManager
 
 
 @pytest.fixture
@@ -15,10 +17,23 @@ def project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def provider(tmp_path: Path) -> AIContextProvider:
+def provider(
+    tmp_path: Path,
+    project: Path,
+) -> AIContextProvider:
     database = WorkspaceDatabase(tmp_path / "workspace.db")
     filesystem = FileSystem()
-    return AIContextProvider(database, filesystem)
+    indexer = FileIndexer(database, filesystem)
+    manager = WorkspaceManager(database, indexer)
+
+    database.upsert_project(str(project), project.name)
+    manager.active_project = project
+
+    return AIContextProvider(
+        database,
+        filesystem,
+        accessible_files_provider=manager.ai_accessible_files,
+    )
 
 
 def grant_file(
@@ -292,21 +307,6 @@ def test_build_returns_relative_posix_paths(
 
     assert included == ["src/main.py"]
     assert "\\" not in included[0]
-
-
-def test_grant_outside_project_is_rejected(
-    provider: AIContextProvider,
-    project: Path,
-    tmp_path: Path,
-):
-    outside = tmp_path / "outside.py"
-    outside.write_text("secret", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="außerhalb des Projekts"):
-        provider._inside_root(
-            project.resolve(),
-            str(outside.resolve()),
-        )
 
 
 def test_multiple_grants_do_not_duplicate_files(

@@ -126,6 +126,65 @@ class WorkspaceManager:
             (str(self.active_project),),
         )
 
+    def ai_accessible_files(self) -> list[Path]:
+        """Return all existing files currently permitted for AI context access."""
+        if not self.active_project:
+            return []
+
+        root = self.active_project
+        result: list[Path] = []
+        seen: set[Path] = set()
+
+        rows = self.database.fetchall(
+            "SELECT relative_path, grant_type FROM ai_access_grants "
+            "WHERE project_path=? ORDER BY created_at",
+            (str(root),),
+        )
+
+        targets: list[tuple[Path, str]] = []
+
+        for row in rows:
+            target = self.filesystem.resolve(root / row["relative_path"])
+            if target != root and root not in target.parents:
+                continue
+            targets.append((target, row["grant_type"]))
+
+        for target in sorted(self._session_grants, key=lambda value: value.as_posix().casefold()):
+            if target == root or root in target.parents:
+                grant_type = "directory" if self.filesystem.is_directory(target) else "file"
+                targets.append((target, grant_type))
+
+        for target, grant_type in targets:
+            if grant_type == "file":
+                candidates = [target] if self.filesystem.is_file(target) else []
+            elif grant_type == "directory":
+                if not self.filesystem.is_directory(target):
+                    continue
+                try:
+                    candidates = [
+                        directory / name
+                        for directory, _, names in self.filesystem.walk(
+                            target,
+                            FileIndexer.IGNORED_DIRECTORIES,
+                        )
+                        for name in names
+                    ]
+                except FileNotFoundError:
+                    candidates = []
+            else:
+                continue
+
+            for candidate in candidates:
+                if (
+                    self.filesystem.is_file(candidate)
+                    and candidate not in seen
+                    and candidate != root
+                ):
+                    seen.add(candidate)
+                    result.append(candidate)
+
+        return result
+
     def grant_session_access(self, path: str | Path) -> None:
         """Grant temporary access for this session only (until project closes)."""
         if not self.active_project:

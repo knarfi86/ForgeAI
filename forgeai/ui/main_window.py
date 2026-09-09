@@ -57,7 +57,11 @@ class MainWindow(QMainWindow):
         self.logger = logging.getLogger("forgeai.ui")
         self.history = History(database)
         self.workspace = WorkspaceManager(database, FileIndexer(database))
-        self.ai_context = AIContextProvider(database, self.workspace.filesystem)
+        self.ai_context = AIContextProvider(
+            database,
+            self.workspace.filesystem,
+            accessible_files_provider=self.workspace.ai_accessible_files,
+        )
         self.tasks = TaskManager(database)
         self.ollama = OllamaClient()
         self.worker = None
@@ -384,6 +388,7 @@ class MainWindow(QMainWindow):
             max_context_tokens=project_context_tokens,
             max_file_tokens=per_file_tokens,
             exclude_noise=is_analysis_request,
+            request=text if is_analysis_request else None,
         )
 
         self.logger.info(
@@ -592,6 +597,15 @@ class MainWindow(QMainWindow):
         self.worker.start()
 
     def _response_done(self) -> None:
+        try:
+            sender = self.sender()
+        except RuntimeError:
+            sender = None
+
+        if sender is not None and sender is not self.worker:
+            self.logger.warning("Ignoring stale Ollama worker completion.")
+            return
+
         if not self.worker:
             self._response_failed("Keine Ollama-Antwort erhalten.")
             return
@@ -715,39 +729,79 @@ class MainWindow(QMainWindow):
     def _analysis_instructions() -> str:
         return """
 ANALYSEMODUS:
-Die aktuelle Benutzeranfrage verlangt eine Analyse und keine DateiÄnderung.
+Die aktuelle Benutzeranfrage verlangt eine Analyse und keine Datei?nderung.
 
 WICHTIG:
-Die nachfolgende Systemnachricht enthält die aktuell für die KI freigegebenen
-Projektdateien. Diese Dateien sind der verfügbare Projektkontext und sollen direkt
-analysiert werden.
+Die nachfolgende Systemnachricht enth?lt die aktuell f?r die KI freigegebenen
+Projektdateien. Diese Dateien sind der verf?gbare Projektkontext und sollen
+direkt analysiert werden.
 
-Frage den Benutzer NICHT erneut nach dem Dateiinhalt, wenn die benötigte Datei bereits
-im bereitgestellten Kontext enthalten ist.
+Frage den Benutzer NICHT erneut nach Dateiinhalt, wenn die ben?tigten Dateien
+bereits im bereitgestellten Kontext enthalten sind.
 
-Wenn ein Projekt oder mehrere Projektdateien überprüft werden sollen:
-- Analysiere die bereitgestellten Dateien direkt.
-- Beurteile nur den tatsächlich bereitgestellten Code.
-- Benenne konkrete, im bereitgestellten Code nachweisbare Fehler.
-- Unterscheide echte Fehler klar von möglichen Verbesserungen.
-- Wenn für eine vollständige Aussage eine bestimmte Datei fehlt, nenne konkret welche Datei
-  im bereitgestellten Kontext fehlt.
-- Behaupte niemals, dass kein Projektkontext vorhanden ist, wenn Dateien im Kontext
-  bereitgestellt wurden.
+GRUNDSATZ:
+Ein Punkt darf nur als FEHLER bezeichnet werden, wenn er anhand des
+bereitgestellten Projektkontexts eindeutig nachweisbar ist.
 
-Regeln:
-- Keine Dateien ändern.
+F?r jeden sicheren FEHLER m?ssen genannt werden:
+- Datei
+- Funktion, Klasse oder eindeutig benannte Code-Stelle
+- konkreter beobachteter Sachverhalt
+- warum daraus sicher ein Fehler folgt
+
+VERBOTENE SCHLUSSFOLGERUNGEN:
+- Eine m?gliche Verbesserung ist KEIN Fehler.
+- Ein m?gliches Risiko ist KEIN Fehler.
+- Ein ungew?hnliches, aber g?ltiges Konstrukt ist KEIN Fehler.
+- Ein lokaler Import ist nicht automatisch ein zirkul?rer Import.
+- Ein Fallback ist nicht automatisch fehlerhaft.
+- Eine fehlende Datei, Sounddatei, Ressource oder Asset darf nur behauptet werden,
+  wenn ihr Fehlen im bereitgestellten Projektkontext nachweisbar ist.
+- Eine doppelte Ereignisverarbeitung darf nur behauptet werden, wenn mindestens
+  zwei konkrete Ereignisabrufe oder Verarbeitungsstellen im bereitgestellten
+  Code nachweisbar sind.
+- Ein Typfehler darf nur behauptet werden, wenn aus dem tats?chlich sichtbaren
+  Code ein falscher Typfluss eindeutig hervorgeht.
+- Vermutungen ?ber nicht bereitgestellte Dateien oder Laufzeitverhalten d?rfen
+  nicht als Tatsachen dargestellt werden.
+
+Wenn ein vermutetes Problem nicht sicher nachweisbar ist:
+- nicht als FEHLER ausgeben
+- stattdessen unter "Unsichere Risiken" nennen
+- klar als unsicher kennzeichnen
+
+Wenn keine sicheren Fehler nachweisbar sind, muss ausdr?cklich stehen:
+"Keine sicher nachweisbaren Fehler im bereitgestellten Kontext."
+
+AUSGABE:
+1. Sichere Fehler
+2. Unsichere Risiken
+3. Verbesserungsvorschl?ge
+
+F?r "Sichere Fehler" sind h?chstens 5 Punkte zul?ssig.
+
+Bei jedem sicheren Fehler:
+- konkrete Fundstelle nennen
+- nur Tatsachen verwenden, die im Kontext sichtbar sind
+- keine fehlenden Informationen erg?nzen oder erfinden
+
+Risiken und Verbesserungsvorschl?ge d?rfen niemals als sichere Fehler bezeichnet
+werden.
+
+Wenn f?r eine vollst?ndige Aussage eine bestimmte Datei fehlt, nenne konkret,
+welche Datei im bereitgestellten Kontext fehlt.
+
+Weitere Regeln:
+- Keine Dateien ?ndern.
 - Keine JSON-actions ausgeben.
 - Keine ChangePreview erzeugen.
-- Keine ausführbaren Dateiänderungsbefehle ausgeben.
+- Keine ausf?hrbaren Datei?nderungsbefehle ausgeben.
+- Keine Codebl?cke oder l?ngeren Codeausz?ge reproduzieren.
 - Keine "hier ist der Befehl zum Kopieren"-Antwort erzeugen.
-- Nur den vorhandenen Code analysieren.
-- Tatsächlich vorhandene Probleme von bloßen Verbesserungsvorschlägen unterscheiden.
-- Behaupte keine Funktionen, Klassen, Imports oder Codeprobleme, die im bereitgestellten
-  Dateiinhalt nicht nachweisbar sind.
-- Wenn eine mögliche Verbesserung genannt wird, klar als Vorschlag kennzeichnen.
+- Nur den tats?chlich bereitgestellten Code analysieren.
+- Behaupte keine Funktionen, Klassen, Imports oder Codeprobleme, die im
+  bereitgestellten Dateiinhalt nicht nachweisbar sind.
 """
-
     def _action_response_format(self, request: str) -> dict | None:
         """Force structured local-model output for requests that change project files."""
         if self._is_analysis_request(request):
@@ -980,6 +1034,10 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
 
     def _prepare_model_changes(self, response: str) -> tuple[str, list[ChangePreview]]:
         """Turn model actions into validated previews without writing any files."""
+        if self._is_analysis_request(self._pending_user_request or ""):
+            print("[DEBUG prepare] SKIPPED: analysis request")
+            return response, []
+
         project = self.workspace.active_project
         print("[DEBUG prepare] project=", project)
         print("[DEBUG prepare] mode=", self.workspace.project_mode())

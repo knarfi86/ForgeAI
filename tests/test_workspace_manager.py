@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 import pytest
 
@@ -239,4 +239,47 @@ def test_active_model_is_cleared_when_project_closes(
     active_manager.close_project()
 
     assert active_manager.get_active_model() is None
+
+def test_ai_accessible_files_includes_recursive_directory_grants(
+    active_manager: WorkspaceManager,
+    project: Path,
+):
+    src = project / "src"
+    nested = src / "nested"
+    nested.mkdir(parents=True)
+
+    root_file = src / "main.py"
+    nested_file = nested / "helper.py"
+    secret_file = project / "secret.py"
+
+    root_file.write_text("main", encoding="utf-8")
+    nested_file.write_text("helper", encoding="utf-8")
+    secret_file.write_text("secret", encoding="utf-8")
+
+    active_manager.grant_ai_access(src)
+
+    accessible = active_manager.ai_accessible_files()
+
+    assert root_file in accessible
+    assert nested_file in accessible
+    assert secret_file not in accessible
+
+
+def test_ai_accessible_files_includes_session_grants_and_deduplicates(
+    active_manager: WorkspaceManager,
+    project: Path,
+):
+    src = project / "src"
+    src.mkdir()
+
+    target = src / "main.py"
+    target.write_text("main", encoding="utf-8")
+
+    active_manager.grant_ai_access(src)
+    active_manager.grant_session_access(target)
+
+    accessible = active_manager.ai_accessible_files()
+
+    assert target in accessible
+    assert accessible.count(target) == 1
 

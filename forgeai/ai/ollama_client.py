@@ -38,7 +38,13 @@ class OllamaStreamWorker(QThread):
             with urllib.request.urlopen(request, timeout=300) as response:
                 for raw_line in response:
                     item = json.loads(raw_line)
-                    content = item.get("message", {}).get("content", "")
+                    message = item.get("message", {})
+
+                    thinking = message.get("thinking", "")
+                    if thinking:
+                        continue
+
+                    content = message.get("content", "")
                     if content:
                         self.content += content
                         self.token_received.emit(content)

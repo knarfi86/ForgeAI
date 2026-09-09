@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 from forgeai.core.file_indexer import FileIndexer
 from forgeai.core.filesystem import FileSystem
@@ -170,3 +170,59 @@ def test_imports_are_sorted_and_unique():
     imports = ProjectAnalyzer._imports(tree)
 
     assert imports == ["a", "x", "z"]
+
+def test_structure_summary_contains_metadata_without_content(
+    tmp_path: Path,
+):
+    database, indexer, analyzer = create_analyzer(tmp_path)
+
+    project = tmp_path / "project"
+    project.mkdir()
+
+    source = project / "src"
+    source.mkdir()
+
+    main = source / "main.py"
+    main.write_text(
+        "class Game: pass\n"
+        "import os\n"
+        "SECRET_VALUE = 'hidden'\n",
+        encoding="utf-8",
+    )
+
+    indexer.index(project)
+
+    summary = analyzer.structure_summary(project)
+
+    assert summary["project_name"] == "project"
+    assert summary["file_count"] == 1
+    assert "src/main.py" == summary["files"][0]["path"]
+    assert summary["folders"] == ["src"]
+    assert summary["languages"] == ["Python"]
+    assert summary["modules"] == ["src.main"]
+    assert summary["classes"]["src/main.py"] == ["Game"]
+    assert summary["imports"]["src/main.py"] == ["os"]
+
+    # Die Strukturzusammenfassung darf keinen Dateiinhalt enthalten.
+    assert "SECRET_VALUE" not in str(summary)
+    assert "hidden" not in str(summary)
+
+    database.close()
+
+
+def test_structure_summary_detects_git_repository(
+    tmp_path: Path,
+):
+    database, indexer, analyzer = create_analyzer(tmp_path)
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".git").mkdir()
+
+    indexer.index(project)
+
+    summary = analyzer.structure_summary(project)
+
+    assert summary["git_repository"] is True
+
+    database.close()
