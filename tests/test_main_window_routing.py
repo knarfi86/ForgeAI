@@ -120,7 +120,8 @@ def test_analysis_instructions_require_structured_claim_json():
 def test_analysis_instructions_do_not_treat_model_as_final_validator():
     instructions = MainWindow._analysis_instructions()
 
-    assert "Du bist NICHT die Instanz" in instructions
+    assert "ForgeAI prüft jeden Claim" in instructions
+    assert "Claims sind Kandidaten und noch keine bewiesenen Fehler." in instructions
     assert "Die endgültige Einstufung übernimmt ForgeAI" in instructions
     assert "keine sichere Einstufung" not in instructions.casefold()
 
@@ -187,3 +188,6 @@ def test_structured_analysis_response_is_processed_as_claim_payload():
     assert "Doppelte MOUSEBUTTONDOWN-Verarbeitung." in result
     assert "BELEGT" in result
     assert "evidence:" in result.casefold()
+
+
+

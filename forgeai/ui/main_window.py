@@ -1,4 +1,4 @@
-﻿"""Composition root for ForgeAI's desktop interface."""
+"""Composition root for ForgeAI's desktop interface."""
 
 import base64
 import json
@@ -656,7 +656,7 @@ class MainWindow(QMainWindow):
 
         self._stream_is_action = False
     def _validate_analysis_response(self, response: str) -> str:
-        """Validate structured analysis claims against deterministic evidence."""
+        """Validate structured analysis and claims against deterministic evidence."""
         project = self.workspace.active_project
 
         if not project:
@@ -667,32 +667,24 @@ class MainWindow(QMainWindow):
             project,
         )
 
-        stripped = response.lstrip()
+        try:
+            parsed = json.loads(response)
+        except (TypeError, json.JSONDecodeError):
+            parsed = None
 
-        # New structured analysis contract.
-        if stripped.startswith("{") and '"claims"' in stripped:
-            claims = self.evidence_validator.claims_from_json(response)
-
-            if claims:
-                return self.evidence_validator.render_claims(
-                    claims,
+        if isinstance(parsed, dict):
+            if "analysis" in parsed and "claims" in parsed:
+                return self.evidence_validator.render_structured_analysis(
+                    parsed,
                     evidence,
                 )
 
-            # A valid structured response with no claims is still a valid
-            # analysis result and must not fall back to treating JSON as prose.
-            try:
-                parsed = json.loads(response)
+            if "claims" in parsed:
+                return self.evidence_validator.render_claims(
+                    self.evidence_validator.claims_from_json(response),
+                    evidence,
+                )
 
-                if isinstance(parsed, dict) and "claims" in parsed:
-                    return self.evidence_validator.render_claims(
-                        [],
-                        evidence,
-                    )
-            except (TypeError, json.JSONDecodeError):
-                pass
-
-        # Backward-compatible fallback for old free-form model output.
         return self.evidence_validator.rewrite_analysis(
             response,
             evidence,
@@ -791,6 +783,35 @@ class MainWindow(QMainWindow):
         return {
             "type": "object",
             "properties": {
+                "analysis": {
+                    "type": "object",
+                    "properties": {
+                        "summary": {
+                            "type": "string",
+                        },
+                        "architecture": {
+                            "type": "string",
+                        },
+                        "components": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "flow": {
+                            "type": "string",
+                        },
+                        "observations": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": [
+                        "summary",
+                        "architecture",
+                        "components",
+                        "flow",
+                        "observations",
+                    ],
+                },
                 "claims": {
                     "type": "array",
                     "items": {
@@ -836,23 +857,46 @@ class MainWindow(QMainWindow):
                     },
                 },
             },
-            "required": ["claims"],
+            "required": [
+                "analysis",
+                "claims",
+            ],
         }
+
     @staticmethod
     def _analysis_instructions() -> str:
         return """
 ANALYSEMODUS
 
-Die Benutzeranfrage verlangt eine Analyse des aktuell bereitgestellten
+Die Benutzeranfrage verlangt eine technische Analyse des aktuell bereitgestellten
 Projektkontexts. Es dürfen keine Dateien verändert werden.
 
-WICHTIG:
-Du bist NICHT die Instanz, die einen Claim als sicher bewiesen einstuft.
-Du lieferst ausschließlich strukturierte Behauptungen als Kandidaten.
+Die Antwort besteht aus zwei getrennten Bereichen:
+
+1. analysis
+   Enthält die eigentliche technische Projektanalyse.
+   Diese Analyse beschreibt den beobachteten Projektzustand, die Architektur,
+   Komponenten, Abläufe und sonstige technische Beobachtungen.
+
+2. claims
+   Enthält zusätzliche prüfbare Behauptungen.
+   Claims sind Kandidaten und noch keine bewiesenen Fehler.
+
 ForgeAI prüft jeden Claim anschließend gegen deterministische lokale
-Projekt-Evidence.
+Projekt-Evidence und übernimmt nur entsprechend validierte Aussagen als
+belegt in den finalen Bericht.
 
 VERWENDE AUSSCHLIESSLICH INFORMATIONEN AUS DEM BEREITGESTELLTEN KONTEXT.
+
+ANALYSIS:
+
+- summary: kurze Zusammenfassung des Projekts und seines aktuellen Zustands
+- architecture: Beschreibung der erkannten Architektur
+- components: wichtige erkannte Komponenten, Module oder Klassen
+- flow: Beschreibung wichtiger Daten- oder Ablaufwege
+- observations: zusätzliche technische Beobachtungen
+
+CLAIMS:
 
 ERLAUBTE CLAIM-TYPEN:
 - file_exists
@@ -883,18 +927,21 @@ REGELN:
 - Ein Risiko ist kein sicherer Fehler.
 - Eine Verbesserung ist kein Fehler.
 - Fehlende Evidence bedeutet nicht automatisch, dass eine Behauptung falsch ist.
-- Bei Unsicherheit darf ein Claim trotzdem als Kandidat ausgegeben werden.
 - Die endgültige Einstufung übernimmt ForgeAI.
-- Bei duplicate_event_handler muss der Claim die konkrete Ereignisart als target enthalten.
+- Bei duplicate_event_handler muss target die konkrete Ereignisart enthalten.
 - Bei syntax_error muss target die konkret beobachtete Fehlermeldung enthalten.
-- Bei dependency_exists muss target die konkrete Beziehung enthalten, zum Beispiel "main -> game".
+- Bei dependency_exists muss target die konkrete Beziehung enthalten.
 
 AUSGABE:
-Gib ausschließlich valides JSON zurück.
-
-Format:
 
 {
+  "analysis": {
+    "summary": "...",
+    "architecture": "...",
+    "components": ["..."],
+    "flow": "...",
+    "observations": ["..."]
+  },
   "claims": [
     {
       "claim_type": "duplicate_event_handler",
@@ -910,6 +957,13 @@ Format:
 Wenn keine sinnvollen Claims erzeugt werden können:
 
 {
+  "analysis": {
+    "summary": "...",
+    "architecture": "...",
+    "components": [],
+    "flow": "...",
+    "observations": []
+  },
   "claims": []
 }
 
@@ -920,6 +974,7 @@ Keine ChangePreview.
 Keine Dateiänderungsbefehle.
 Keine selbst erfundenen Beweise.
 """
+
     def _action_response_format(self, request: str) -> dict | None:
         """Force structured local-model output for requests that change project files."""
         if self._is_analysis_request(request):

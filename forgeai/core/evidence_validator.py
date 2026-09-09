@@ -1,4 +1,4 @@
-﻿"""Validation of LLM claims against deterministic project evidence."""
+"""Validation of LLM claims against deterministic project evidence."""
 
 from __future__ import annotations
 
@@ -782,6 +782,162 @@ class EvidenceValidator:
             lines.extend(unverified)
 
         return "\n".join(lines)
+    def render_structured_analysis(
+        self,
+        payload: dict,
+        evidence: ProjectEvidence,
+    ) -> str:
+        """Render model analysis together with evidence-validated claims."""
+        analysis = payload.get("analysis")
+        if not isinstance(analysis, dict):
+            analysis = {}
+
+        claims = self.claims_from_json(json.dumps(payload, ensure_ascii=False))
+        validations = self.validate_many(claims, evidence)
+
+        lines = [
+            "Projektanalyse",
+            "",
+            "1. Zusammenfassung",
+            analysis.get("summary") or "Keine Zusammenfassung geliefert.",
+            "",
+            "2. Architektur",
+            analysis.get("architecture") or "Keine Architekturbeschreibung geliefert.",
+            "",
+            "3. Komponenten",
+        ]
+
+        components = analysis.get("components")
+        if isinstance(components, list) and components:
+            lines.extend(f"- {item}" for item in components if item)
+        else:
+            lines.append("- Keine Komponentenbeschreibung geliefert.")
+
+        lines.extend([
+            "",
+            "4. Ablauf",
+            analysis.get("flow") or "Keine Ablaufbeschreibung geliefert.",
+            "",
+            "5. Beobachtungen",
+        ])
+
+        observations = analysis.get("observations")
+        if isinstance(observations, list) and observations:
+            lines.extend(f"- {item}" for item in observations if item)
+        else:
+            lines.append("- Keine zusätzlichen Beobachtungen geliefert.")
+
+        secure_errors = []
+        risks = []
+        improvements = []
+        unverified = []
+        claim_observations = []
+
+        for validation in validations:
+            claim = validation.claim
+            statement = claim.statement
+
+            location = ""
+            if claim.source_file:
+                location = f" | {claim.source_file}"
+                if claim.source_line is not None:
+                    location += f":{claim.source_line}"
+
+            evidence_text = ""
+            if validation.evidence_ids:
+                evidence_text = (
+                    " | Evidence: "
+                    + ", ".join(validation.evidence_ids)
+                )
+
+            detail = (
+                f"{statement}{location}"
+                f" | {validation.reason}{evidence_text}"
+            )
+
+            if (
+                claim.category == "error"
+                and validation.status == ClaimStatus.SUPPORTED
+            ):
+                secure_errors.append(f"- [BELEGT] {detail}")
+            elif claim.category == "risk":
+                if validation.status == ClaimStatus.UNVERIFIED:
+                    risks.append(f"- [NICHT BELEGT] {detail}")
+                elif validation.status == ClaimStatus.CONTRADICTED:
+                    risks.append(f"- [WIDERLEGT] {detail}")
+                else:
+                    risks.append(f"- [BELEGT] {detail}")
+            elif claim.category == "improvement":
+                improvements.append(f"- {statement}")
+            elif claim.category == "analysis":
+                claim_observations.append(
+                    f"- [{validation.status.value.upper()}] {detail}"
+                )
+            else:
+                unverified.append(
+                    f"- [{validation.status.value.upper()}] {detail}"
+                )
+
+            if (
+                claim.category == "error"
+                and validation.status != ClaimStatus.SUPPORTED
+            ):
+                label = (
+                    "WIDERLEGT"
+                    if validation.status == ClaimStatus.CONTRADICTED
+                    else "NICHT BELEGT"
+                )
+                unverified.append(f"- [{label}] {detail}")
+
+        lines.extend([
+            "",
+            "6. Sichere Fehler",
+        ])
+
+        if secure_errors:
+            lines.extend(secure_errors)
+        else:
+            lines.append(
+                "- Keine sicher nachweisbaren Fehler im "
+                "lokal belegbaren Kontext."
+            )
+
+        lines.extend([
+            "",
+            "7. Unsichere Risiken",
+        ])
+
+        if risks:
+            lines.extend(risks)
+        else:
+            lines.append("- Keine zusätzlichen Risiken.")
+
+        lines.extend([
+            "",
+            "8. Verbesserungsvorschläge",
+        ])
+
+        if improvements:
+            lines.extend(improvements)
+        else:
+            lines.append("- Keine Verbesserungsvorschläge aus den Claims.")
+
+        if claim_observations:
+            lines.extend([
+                "",
+                "9. Ergänzende prüfbare Beobachtungen",
+            ])
+            lines.extend(claim_observations)
+
+        if unverified:
+            lines.extend([
+                "",
+                "Nicht bestätigte Behauptungen",
+            ])
+            lines.extend(unverified)
+
+        return "\n".join(lines)
+
     @staticmethod
     def _find_heading(
         lines: list[str],
