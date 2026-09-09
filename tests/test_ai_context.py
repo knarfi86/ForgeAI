@@ -64,6 +64,62 @@ def grant_directory(
     )
 
 
+
+def test_build_structure_is_separate_from_granted_file_content(
+    tmp_path: Path,
+):
+    from forgeai.core.file_indexer import FileIndexer
+    from forgeai.core.workspace_manager import WorkspaceManager
+
+    database = WorkspaceDatabase(tmp_path / "workspace.db")
+    filesystem = FileSystem()
+    indexer = FileIndexer(database, filesystem)
+    manager = WorkspaceManager(database, indexer)
+
+    project = tmp_path / "project"
+    project.mkdir()
+
+    allowed = project / "main.py"
+    denied = project / "secret.py"
+
+    allowed.write_text(
+        "print('allowed')\n",
+        encoding="utf-8",
+    )
+    denied.write_text(
+        "SECRET_VALUE = 'hidden'\n",
+        encoding="utf-8",
+    )
+
+    database.upsert_project(str(project), project.name)
+    manager.active_project = project
+    indexer.index(project)
+    manager.grant_ai_access(allowed)
+
+    provider = AIContextProvider(
+        database,
+        filesystem,
+        accessible_files_provider=manager.ai_accessible_files,
+        structure_provider=manager.analyzer.structure_summary,
+    )
+
+    context, included = provider.build(
+        project,
+        max_context_tokens=4096,
+        max_file_tokens=1024,
+        include_structure=True,
+    )
+
+    assert "--- PROJEKTSTRUKTUR (AUTOMATISCH ERMITTELTE METADATEN) ---" in context
+    assert "main.py" in context
+    assert "secret.py" in context
+    assert "allowed" in context
+    assert "SECRET_VALUE" not in context
+    assert "hidden" not in context
+    assert included == ["main.py"]
+
+    database.close()
+
 def test_build_without_project_returns_empty_context(
     provider: AIContextProvider,
 ):

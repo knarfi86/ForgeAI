@@ -427,22 +427,17 @@ Die erste technische Implementierung befindet sich in
 
 #### Aktuell betroffene Dateien
 
-- `forgeai/ai/ollama_client.py`
 - `forgeai/core/ai_context.py`
-- `forgeai/core/project_analyzer.py`
-- `forgeai/core/workspace_manager.py`
 - `forgeai/ui/main_window.py`
 - `tests/test_ai_context.py`
-- `tests/test_project_analyzer.py`
-- `tests/test_workspace_manager.py`
 
 #### Letzte relevante Commits
 
-- `09eaa4d (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: improve analysis routing and project context relevance`
+- `68b9865 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) refactor: centralize AI access and add project structure context`
+- `09eaa4d fix: improve analysis routing and project context relevance`
 - `b71de7a test: protect analysis from change preview pipeline`
 - `923a4c1 fix: stabilize agent no-op and verification recovery`
 - `5af2d92 feat: add project test runner detection`
-- `106eb2f feat: connect agent verification to recovery`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell

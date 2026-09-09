@@ -9,7 +9,7 @@ from forgeai.core.workspace_database import WorkspaceDatabase
 
 
 class AIContextProvider:
-    """Reads only persisted, user-approved local project paths for Ollama prompts."""
+    """Build bounded Ollama context from project metadata and approved file contents."""
 
     CHARS_PER_TOKEN = 4
 
@@ -18,10 +18,12 @@ class AIContextProvider:
         database: WorkspaceDatabase,
         filesystem: FileSystem,
         accessible_files_provider: Callable[[], list[Path]],
+        structure_provider: Callable[[Path], dict] | None = None,
     ):
         self.database = database
         self.filesystem = filesystem
         self.accessible_files_provider = accessible_files_provider
+        self.structure_provider = structure_provider
         self.relevance = ProjectRelevance(database, filesystem)
 
     def build(
@@ -31,6 +33,7 @@ class AIContextProvider:
         max_file_tokens: int | None = None,
         exclude_noise: bool = False,
         request: str | None = None,
+        include_structure: bool = False,
     ) -> tuple[str, list[str]]:
         """Build a bounded system-message fragment using a model-dependent token budget."""
         if not project_path:
@@ -60,12 +63,34 @@ class AIContextProvider:
             )
 
         max_context_chars = max(1, max_context_tokens) * self.CHARS_PER_TOKEN
-        effective_file_tokens = max_file_tokens or max(1, max_context_tokens // 2)
+        effective_file_tokens = (
+            max_file_tokens or max(1, max_context_tokens // 2)
+        )
         max_file_chars = max(1, effective_file_tokens) * self.CHARS_PER_TOKEN
 
-        chunks: list[str] = []
-        included: list[str] = []
+        structure_context = ""
         used = 0
+
+        if include_structure and self.structure_provider is not None:
+            structure = self.structure_provider(root)
+            structure_text = self._format_structure(structure)
+
+            max_structure_chars = min(
+                max_context_chars,
+                max(4_000, max_context_chars // 4),
+            )
+            structure_text = structure_text[:max_structure_chars]
+
+            structure_context = (
+                "--- PROJEKTSTRUKTUR (AUTOMATISCH ERMITTELTE METADATEN) ---\n"
+                "Die folgende Struktur wurde lokal aus Projektmetadaten ermittelt. "
+                "Sie enth?lt keinen automatisch freigegebenen Dateiinhalt.\n"
+                f"{structure_text}"
+            )
+            used = len(structure_context)
+
+        file_chunks: list[str] = []
+        included: list[str] = []
 
         noise_directories = {
             ".git",
@@ -91,6 +116,7 @@ class AIContextProvider:
 
             content = self.filesystem.read_text(path)
             relative = path.relative_to(root).as_posix()
+
             chunk = (
                 f"\n\n--- Datei: {relative} ---\n"
                 f"{content[:max_file_chars]}"
@@ -99,16 +125,38 @@ class AIContextProvider:
             if used + len(chunk) > max_context_chars:
                 continue
 
-            chunks.append(chunk)
+            file_chunks.append(chunk)
             included.append(relative)
             used += len(chunk)
-        if not chunks:
+
+        if not structure_context and not file_chunks:
             return "", []
-        header = (
-            "Folgende Dateien wurden vom Benutzer explizit für lokalen Projektkontext "
-            "freigegeben. Nutze nur diesen Kontext und behaupte keinen Zugriff auf andere Dateien:"
+
+        parts: list[str] = []
+
+        if structure_context:
+            parts.append(structure_context)
+
+        if file_chunks:
+            parts.append(
+                "--- FREIGEGEBENE DATEI-INHALTE ---\n"
+                "Die folgenden Datei-Inhalte wurden vom Benutzer ausdr?cklich "
+                "f?r den lokalen KI-Kontext freigegeben. "
+                "Nur diese Datei-Inhalte d?rfen als tats?chlich gelesener Inhalt "
+                "behandelt werden. Die Projektstruktur oben ist davon getrennt."
+            )
+            parts.extend(file_chunks)
+
+        return "\n\n".join(parts), included
+
+    def _format_structure(self, structure: dict) -> str:
+        import json
+
+        return json.dumps(
+            structure,
+            ensure_ascii=False,
+            indent=2,
         )
-        return header + "".join(chunks), included
 
     def _granted_files(self, root: Path) -> list[Path]:
         return [

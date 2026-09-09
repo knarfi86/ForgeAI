@@ -389,6 +389,7 @@ class MainWindow(QMainWindow):
             max_file_tokens=per_file_tokens,
             exclude_noise=is_analysis_request,
             request=text if is_analysis_request else None,
+            include_structure=is_analysis_request,
         )
 
         self.logger.info(
@@ -474,6 +475,7 @@ class MainWindow(QMainWindow):
             max_context_tokens=project_context_tokens,
             max_file_tokens=per_file_tokens,
             exclude_noise=True,
+            include_structure=True,
         )
         self._agent_num_ctx = num_ctx
         self._agent_project_context = context or ""
