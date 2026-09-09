@@ -4,6 +4,7 @@ from pathlib import Path
 
 from forgeai.core.file_indexer import FileIndexer
 from forgeai.core.filesystem import FileSystem
+from forgeai.core.project_relevance import ProjectRelevance
 from forgeai.core.workspace_database import WorkspaceDatabase
 
 
@@ -15,6 +16,7 @@ class AIContextProvider:
     def __init__(self, database: WorkspaceDatabase, filesystem: FileSystem):
         self.database = database
         self.filesystem = filesystem
+        self.relevance = ProjectRelevance(database, filesystem)
 
     def build(
         self,
@@ -22,6 +24,7 @@ class AIContextProvider:
         max_context_tokens: int = 8_192,
         max_file_tokens: int | None = None,
         exclude_noise: bool = False,
+        request: str | None = None,
     ) -> tuple[str, list[str]]:
         """Build a bounded system-message fragment using a model-dependent token budget."""
         if not project_path:
@@ -29,6 +32,26 @@ class AIContextProvider:
 
         root = self.filesystem.resolve(project_path)
         paths = self._granted_files(root)
+
+        if request:
+            relevant = self.relevance.find_relevant(
+                root,
+                request,
+                max_results=len(paths),
+            )
+            relevance_rank = {
+                relative_path: index
+                for index, relative_path in enumerate(relevant)
+            }
+            paths.sort(
+                key=lambda path: (
+                    relevance_rank.get(
+                        path.relative_to(root).as_posix(),
+                        100_000,
+                    ),
+                    path.relative_to(root).as_posix().casefold(),
+                )
+            )
 
         max_context_chars = max(1, max_context_tokens) * self.CHARS_PER_TOKEN
         effective_file_tokens = max_file_tokens or max(1, max_context_tokens // 2)
@@ -68,7 +91,7 @@ class AIContextProvider:
             )
 
             if used + len(chunk) > max_context_chars:
-                break
+                continue
 
             chunks.append(chunk)
             included.append(relative)

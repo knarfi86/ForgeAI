@@ -12,12 +12,19 @@ class ProjectRelevance:
 
     STOP_WORDS = {
         "aber", "alle", "als", "auch", "auf", "aus", "bei", "damit",
-        "dass", "der", "die", "dies", "diese", "dieser", "ein", "eine",
+        "dass", "das", "der", "die", "dies", "diese", "dieser", "ein", "eine",
         "einer", "einem", "einen", "f?r", "gegen", "hat", "haben",
         "hier", "ich", "im", "in", "ist", "kann", "mit", "nach", "nicht",
         "nur", "oder", "sich", "sie", "sind", "und", "von", "war", "warum",
         "wie", "wird", "zu", "zum", "zur", "zusammen", "richtig",
         "lesen", "forge", "funktioniert", "warum", "wieso",
+        "analysiere", "analysier", "analyse",
+        "untersuche", "untersuchen",
+        "pr?fe", "pruefe", "pr?fen", "pruefen",
+        "?berpr?fe", "ueberpruefe", "?berpr?fen", "ueberpruefen",
+        "aktuelle", "aktuellen", "aktuelles",
+        "projekt", "projekte",
+        "fehler", "probleme", "problem",
     }
 
     def __init__(self, database, filesystem):
@@ -37,15 +44,19 @@ class ProjectRelevance:
         if limit <= 0:
             return []
 
-        terms = self._terms(request)
-        if not terms:
-            return []
-
         records = self.database.fetchall(
             "SELECT relative_path FROM project_files "
             "WHERE project_path=? ORDER BY relative_path",
             (str(root),),
         )
+
+        terms = self._terms(request)
+        if not terms:
+            return self._fallback_project_paths(
+                records,
+                self._load_analysis(root),
+                limit,
+            )
 
         analysis = self._load_analysis(root)
         if not analysis:
@@ -99,6 +110,74 @@ class ProjectRelevance:
             return {}
 
         return analysis if isinstance(analysis, dict) else {}
+
+    @staticmethod
+    def _fallback_project_paths(records, analysis: dict, limit: int) -> list[str]:
+        """Choose likely entry points and project-control files for broad analysis."""
+        priority_names = {
+            "readme.md": 120,
+            "pyproject.toml": 115,
+            "requirements.txt": 110,
+            "setup.py": 105,
+            "main.py": 100,
+            "app.py": 95,
+            "run.py": 90,
+            "server.py": 85,
+            "client.py": 85,
+            "game_client.py": 85,
+            "index.py": 80,
+            "config.py": 75,
+        }
+
+        analysis = analysis if isinstance(analysis, dict) else {}
+        imports = analysis.get("imports", {})
+        classes = analysis.get("classes", {})
+
+        scored: list[tuple[int, str]] = []
+
+        for record in records:
+            relative_path = record["relative_path"]
+            filename = Path(relative_path).name.casefold()
+            stem = Path(relative_path).stem.casefold()
+
+            score = priority_names.get(filename, 0)
+
+            if filename.endswith(".py"):
+                score += 10
+
+            for marker in (
+                "main",
+                "app",
+                "server",
+                "client",
+                "game",
+                "run",
+                "entry",
+                "config",
+            ):
+                if marker in stem:
+                    score += 12
+
+            imported = imports.get(relative_path, [])
+            defined_classes = classes.get(relative_path, [])
+
+            if isinstance(imported, list):
+                score += min(len(imported), 10)
+
+            if isinstance(defined_classes, list):
+                score += min(len(defined_classes) * 2, 10)
+
+            if score > 0:
+                scored.append((score, relative_path))
+
+        scored.sort(
+            key=lambda item: (-item[0], item[1].casefold())
+        )
+
+        return [
+            relative_path
+            for _, relative_path in scored[:limit]
+        ]
 
     def _fallback_path_search(self, records, terms: list[str], limit: int) -> list[str]:
         """Keep relevance useful if structural analysis is temporarily unavailable."""

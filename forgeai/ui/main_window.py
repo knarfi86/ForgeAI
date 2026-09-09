@@ -598,7 +598,12 @@ class MainWindow(QMainWindow):
 
         raw_content = self.worker.content
 
-        if self._stream_is_action:
+        if (
+            self._stream_is_action
+            and not self._is_analysis_request(
+                self._pending_user_request or ""
+            )
+        ):
             content, previews = self._prepare_model_changes(raw_content)
         else:
             content, previews = raw_content, []

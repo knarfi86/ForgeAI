@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 import pytest
 
@@ -325,3 +325,86 @@ def test_multiple_grants_do_not_duplicate_files(
     _, included = provider.build(project)
 
     assert included.count("src/main.py") == 1
+
+
+def test_build_skips_oversized_file_and_continues(
+    provider: AIContextProvider,
+    project: Path,
+):
+    oversized = project / "oversized.py"
+    fitting = project / "fitting.py"
+
+    oversized.write_text("A" * 500, encoding="utf-8")
+    fitting.write_text("important", encoding="utf-8")
+
+    grant_file(provider, project, "oversized.py")
+    grant_file(provider, project, "fitting.py")
+
+    context, included = provider.build(
+        project,
+        max_context_tokens=35,
+        max_file_tokens=100,
+    )
+
+    assert "oversized.py" not in included
+    assert "fitting.py" in included
+    assert "important" in context
+
+
+def test_build_request_prefers_relevant_file(
+    provider: AIContextProvider,
+    project: Path,
+):
+    unrelated = project / "notes.py"
+    relevant = project / "game_client.py"
+
+    unrelated.write_text("notes", encoding="utf-8")
+    relevant.write_text("send_set_target_mode()", encoding="utf-8")
+
+    grant_file(provider, project, "notes.py")
+    grant_file(provider, project, "game_client.py")
+
+    _, included = provider.build(
+        project,
+        max_context_tokens=100,
+        max_file_tokens=10,
+        request="?ndere die Zielmodus-Logik in game client",
+    )
+
+    assert included[0] == "game_client.py"
+
+
+def test_build_broad_analysis_prioritizes_entrypoint(
+    provider: AIContextProvider,
+    project: Path,
+):
+    helper = project / "helper.py"
+    entrypoint = project / "main.py"
+
+    helper.write_text("helper", encoding="utf-8")
+    entrypoint.write_text("main()", encoding="utf-8")
+
+    grant_file(provider, project, "helper.py")
+    grant_file(provider, project, "main.py")
+
+    provider.database.execute(
+        "INSERT INTO project_files("
+        "project_path,relative_path,file_type,size_bytes,modified_at,sha256"
+        ") VALUES(?,?,?,?,?,?)",
+        (str(project.resolve()), "helper.py", "Python", 6, "", ""),
+    )
+    provider.database.execute(
+        "INSERT INTO project_files("
+        "project_path,relative_path,file_type,size_bytes,modified_at,sha256"
+        ") VALUES(?,?,?,?,?,?)",
+        (str(project.resolve()), "main.py", "Python", 7, "", ""),
+    )
+
+    _, included = provider.build(
+        project,
+        max_context_tokens=100,
+        max_file_tokens=10,
+        request="analysiere das aktuelle projekt auf fehler",
+    )
+
+    assert included[0] == "main.py"
