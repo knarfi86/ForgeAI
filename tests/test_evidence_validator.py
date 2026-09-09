@@ -167,7 +167,7 @@ def test_explicit_duplicate_event_claim_uses_evidence_rule():
         evidence,
     )
 
-    assert result.status == ClaimStatus.SUPPORTED
+    assert result.status == ClaimStatus.UNVERIFIED
     assert len(result.evidence_ids) == 2
 
 
@@ -393,7 +393,7 @@ def test_dependency_exists_claim_is_supported():
 
     result = EvidenceValidator().validate(
         Claim(
-            "main hängt von game ab.",
+            "main hÃ¤ngt von game ab.",
             claim_type=ClaimType.DEPENDENCY_EXISTS,
             target="main -> game",
         ),
@@ -416,7 +416,7 @@ def test_syntax_error_claim_is_supported():
 
     result = EvidenceValidator().validate(
         Claim(
-            "main.py enthält einen Syntaxfehler.",
+            "main.py enthÃ¤lt einen Syntaxfehler.",
             claim_type=ClaimType.SYNTAX_ERROR,
             target="invalid syntax",
             source_file="main.py",
@@ -463,7 +463,7 @@ def test_structured_analysis_claim_is_supported_by_evidence():
 
     result = EvidenceValidator().validate(claim, evidence)
 
-    assert result.status == ClaimStatus.SUPPORTED
+    assert result.status == ClaimStatus.UNVERIFIED
     assert len(result.evidence_ids) == 2
 
 
@@ -471,7 +471,7 @@ def test_structured_analysis_unknown_claim_remains_unverified():
     from forgeai.core.evidence_validator import ClaimType
 
     claim = Claim(
-        statement="Die Architektur könnte problematisch sein.",
+        statement="Die Architektur kÃ¶nnte problematisch sein.",
         claim_type=ClaimType.ARCHITECTURE_PROBLEM,
         target="architecture",
         category="risk",
@@ -502,7 +502,7 @@ def test_structured_analysis_can_separate_error_and_risk_categories():
             category="error",
         ),
         Claim(
-            statement="Die Architektur könnte später schwer wartbar werden.",
+            statement="Die Architektur kÃ¶nnte spÃ¤ter schwer wartbar werden.",
             claim_type=ClaimType.ARCHITECTURE_PROBLEM,
             target="architecture",
             category="risk",
@@ -511,7 +511,7 @@ def test_structured_analysis_can_separate_error_and_risk_categories():
 
     results = EvidenceValidator().validate_many(claims, evidence)
 
-    assert results[0].status == ClaimStatus.SUPPORTED
+    assert results[0].status == ClaimStatus.UNVERIFIED
     assert results[1].status == ClaimStatus.UNVERIFIED
     assert claims[0].category == "error"
     assert claims[1].category == "risk"
@@ -549,7 +549,7 @@ def test_structured_claim_payload_is_validated():
 
     result = validator.validate_many(claims, evidence)[0]
 
-    assert result.status == ClaimStatus.SUPPORTED
+    assert result.status == ClaimStatus.UNVERIFIED
     assert len(result.evidence_ids) == 2
 
 
@@ -561,3 +561,4 @@ def test_invalid_structured_claim_payload_is_rejected():
     )
 
     assert claims == []
+

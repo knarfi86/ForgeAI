@@ -186,8 +186,10 @@ def test_structured_analysis_response_is_processed_as_claim_payload():
     result = window._validate_analysis_response(response)
 
     assert "Doppelte MOUSEBUTTONDOWN-Verarbeitung." in result
-    assert "BELEGT" in result
+    assert "UNVERIFIED" in result
     assert "evidence:" in result.casefold()
+
+
 
 
 

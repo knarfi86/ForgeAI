@@ -428,16 +428,16 @@ Die erste technische Implementierung befindet sich in
 #### Aktuell betroffene Dateien
 
 - `forgeai/core/evidence_validator.py`
-- `forgeai/ui/main_window.py`
+- `tests/test_evidence_validator.py`
 - `tests/test_main_window_routing.py`
 
 #### Letzte relevante Commits
 
-- `8d37fe0 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: add evidence-based analysis validation`
+- `415c9d3 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: integrate validated claims into project analysis`
+- `8d37fe0 feat: add evidence-based analysis validation`
 - `165f769 feat: separate project structure from approved AI context`
 - `68b9865 refactor: centralize AI access and add project structure context`
 - `09eaa4d fix: improve analysis routing and project context relevance`
-- `b71de7a test: protect analysis from change preview pipeline`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell

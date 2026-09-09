@@ -75,22 +75,9 @@ class EvidenceValidator:
         if claim.claim_type == ClaimType.DUPLICATE_EVENT_HANDLER:
             observations = evidence.matching(
                 "event_handler",
-                "pygame.MOUSEBUTTONDOWN",
+                claim.target or "pygame.MOUSEBUTTONDOWN",
             )
             evidence_items = evidence.all_evidence_for(observations)
-
-            if len(observations) >= 2:
-                return ClaimValidation(
-                    claim=claim,
-                    status=ClaimStatus.SUPPORTED,
-                    evidence_ids=[
-                        item.evidence_id for item in evidence_items
-                    ],
-                    reason=(
-                        f"{len(observations)} konkrete MOUSEBUTTONDOWN-"
-                        "Verarbeitungsstellen wurden im AST gefunden."
-                    ),
-                )
 
             return ClaimValidation(
                 claim=claim,
@@ -99,9 +86,10 @@ class EvidenceValidator:
                     item.evidence_id for item in evidence_items
                 ],
                 reason=(
-                    f"Nur {len(observations)} konkrete MOUSEBUTTONDOWN-"
-                    "Verarbeitungsstelle(n) wurden gefunden. "
-                    "Das reicht nicht als Nachweis für doppelte Verarbeitung."
+                    f"{len(observations)} Event-Handler-Fundstelle(n) "
+                    "wurden deterministisch erkannt. Das belegt mehrere "
+                    "Handler, aber keine tatsächliche doppelte Verarbeitung "
+                    "desselben Events."
                 ),
             )
 
@@ -873,21 +861,17 @@ class EvidenceValidator:
                 claim_observations.append(
                     f"- [{validation.status.value.upper()}] {detail}"
                 )
-            else:
-                unverified.append(
-                    f"- [{validation.status.value.upper()}] {detail}"
-                )
-
-            if (
-                claim.category == "error"
-                and validation.status != ClaimStatus.SUPPORTED
-            ):
+            elif claim.category == "error":
                 label = (
                     "WIDERLEGT"
                     if validation.status == ClaimStatus.CONTRADICTED
                     else "NICHT BELEGT"
                 )
                 unverified.append(f"- [{label}] {detail}")
+            else:
+                unverified.append(
+                    f"- [{validation.status.value.upper()}] {detail}"
+                )
 
         lines.extend([
             "",
