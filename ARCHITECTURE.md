@@ -427,17 +427,21 @@ Die erste technische Implementierung befindet sich in
 
 #### Aktuell betroffene Dateien
 
-- `forgeai/core/ai_context.py`
+- `forgeai/core/project_analyzer.py`
 - `forgeai/ui/main_window.py`
-- `tests/test_ai_context.py`
+- `tests/test_main_window_routing.py`
+- `forgeai/core/evidence_validator.py`
+- `forgeai/core/project_evidence.py`
+- `tests/test_evidence_validator.py`
+- `tests/test_project_evidence.py`
 
 #### Letzte relevante Commits
 
-- `68b9865 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) refactor: centralize AI access and add project structure context`
+- `165f769 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: separate project structure from approved AI context`
+- `68b9865 refactor: centralize AI access and add project structure context`
 - `09eaa4d fix: improve analysis routing and project context relevance`
 - `b71de7a test: protect analysis from change preview pipeline`
 - `923a4c1 fix: stabilize agent no-op and verification recovery`
-- `5af2d92 feat: add project test runner detection`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell

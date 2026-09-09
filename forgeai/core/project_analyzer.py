@@ -92,6 +92,99 @@ class ProjectAnalyzer:
             "folder_count": len(folders),
         }
 
+    def evidence_summary(self, project_path: str | Path) -> dict:
+        """Return deterministic facts intended for claim/evidence validation."""
+        root = self.filesystem.resolve(project_path)
+        records = self.database.fetchall(
+            "SELECT relative_path, file_type FROM project_files "
+            "WHERE project_path=? ORDER BY relative_path",
+            (str(root),),
+        )
+
+        functions: dict[str, list[str]] = {}
+        event_handlers: dict[str, list[str]] = {}
+        event_retrievals: dict[str, list[str]] = {}
+
+        for record in records:
+            relative_path = record["relative_path"]
+            if not relative_path.endswith(".py"):
+                continue
+
+            source = self.filesystem.read_text(root / relative_path)
+
+            try:
+                tree = ast.parse(source, filename=relative_path)
+            except SyntaxError:
+                continue
+
+            functions[relative_path] = sorted(
+                {
+                    node.name
+                    for node in ast.walk(tree)
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                }
+            )
+
+            handlers: list[str] = []
+            retrievals: list[str] = []
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Compare):
+                    event_name = self._event_comparison(node)
+                    if event_name:
+                        handlers.append(event_name)
+
+                if isinstance(node, ast.Call):
+                    qualified = self._qualified_name(node.func)
+                    if qualified == "pygame.event.get":
+                        retrievals.append(qualified)
+
+            event_handlers[relative_path] = sorted(handlers)
+            event_retrievals[relative_path] = sorted(retrievals)
+
+        return {
+            "project_path": str(root),
+            "functions": functions,
+            "event_handlers": event_handlers,
+            "event_retrievals": event_retrievals,
+        }
+
+    @staticmethod
+    def _qualified_name(node: ast.AST) -> str | None:
+        if isinstance(node, ast.Name):
+            return node.id
+
+        if isinstance(node, ast.Attribute):
+            prefix = ProjectAnalyzer._qualified_name(node.value)
+            return f"{prefix}.{node.attr}" if prefix else node.attr
+
+        return None
+
+    @staticmethod
+    def _event_comparison(node: ast.Compare) -> str | None:
+        left = node.left
+
+        if not (
+            isinstance(left, ast.Attribute)
+            and left.attr == "type"
+            and isinstance(left.value, ast.Name)
+            and left.value.id == "event"
+        ):
+            return None
+
+        for comparator in node.comparators:
+            qualified = ProjectAnalyzer._qualified_name(comparator)
+            if qualified:
+                return qualified
+
+            if isinstance(comparator, ast.Tuple):
+                for element in comparator.elts:
+                    qualified = ProjectAnalyzer._qualified_name(element)
+                    if qualified:
+                        return qualified
+
+        return None
+
     def _documents(self, root: Path) -> dict[str, str]:
         return {name: self.filesystem.read_text(root / name) for name in self.DOCUMENTS
                 if self.filesystem.is_file(root / name)}

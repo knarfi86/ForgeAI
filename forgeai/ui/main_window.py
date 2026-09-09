@@ -1,4 +1,4 @@
-"""Composition root for ForgeAI's desktop interface."""
+﻿"""Composition root for ForgeAI's desktop interface."""
 
 import base64
 import json
@@ -22,6 +22,8 @@ from forgeai.ai.ollama_client import OllamaClient
 from forgeai.ai.prompts import SYSTEM_PROMPT
 from forgeai.config import Config
 from forgeai.core.ai_context import AIContextProvider
+from forgeai.core.evidence_validator import EvidenceValidator
+from forgeai.core.project_evidence import ProjectEvidence
 from forgeai.core.file_indexer import FileIndexer
 from forgeai.core.history import History
 from forgeai.core.models import ProjectMode
@@ -62,6 +64,7 @@ class MainWindow(QMainWindow):
             self.workspace.filesystem,
             accessible_files_provider=self.workspace.ai_accessible_files,
         )
+        self.evidence_validator = EvidenceValidator()
         self.tasks = TaskManager(database)
         self.ollama = OllamaClient()
         self.worker = None
@@ -352,7 +355,11 @@ class MainWindow(QMainWindow):
         self.chat_view.add_message("user", text)
         self.chat_view.add_message("assistant", "")
         is_analysis_request = self._is_analysis_request(text)
-        response_format = self._action_response_format(text)
+
+        if is_analysis_request:
+            response_format = self._analysis_response_format(text)
+        else:
+            response_format = self._action_response_format(text)
 
         if is_analysis_request:
             system_content = SYSTEM_PROMPT + self._analysis_instructions()
@@ -621,6 +628,9 @@ class MainWindow(QMainWindow):
             )
         ):
             content, previews = self._prepare_model_changes(raw_content)
+        elif self._is_analysis_request(getattr(self, "_pending_user_request", "")):
+            content = self._validate_analysis_response(raw_content)
+            previews = []
         else:
             content, previews = raw_content, []
 
@@ -645,6 +655,49 @@ class MainWindow(QMainWindow):
             )
 
         self._stream_is_action = False
+    def _validate_analysis_response(self, response: str) -> str:
+        """Validate structured analysis claims against deterministic evidence."""
+        project = self.workspace.active_project
+
+        if not project:
+            return response
+
+        evidence = ProjectEvidence.from_analyzer(
+            self.workspace.analyzer,
+            project,
+        )
+
+        stripped = response.lstrip()
+
+        # New structured analysis contract.
+        if stripped.startswith("{") and '"claims"' in stripped:
+            claims = self.evidence_validator.claims_from_json(response)
+
+            if claims:
+                return self.evidence_validator.render_claims(
+                    claims,
+                    evidence,
+                )
+
+            # A valid structured response with no claims is still a valid
+            # analysis result and must not fall back to treating JSON as prose.
+            try:
+                parsed = json.loads(response)
+
+                if isinstance(parsed, dict) and "claims" in parsed:
+                    return self.evidence_validator.render_claims(
+                        [],
+                        evidence,
+                    )
+            except (TypeError, json.JSONDecodeError):
+                pass
+
+        # Backward-compatible fallback for old free-form model output.
+        return self.evidence_validator.rewrite_analysis(
+            response,
+            evidence,
+        )
+
     @staticmethod
     def _is_change_confirmation(request: str) -> bool:
         """Detect explicit chat confirmations for the currently pending preview."""
@@ -728,81 +781,144 @@ class MainWindow(QMainWindow):
         )
 
     @staticmethod
+    def _analysis_response_format(request: str) -> dict | None:
+        """Return the structured JSON schema used by analysis requests."""
+        if not MainWindow._is_analysis_request(request):
+            return None
+
+        from forgeai.core.evidence_validator import ClaimType
+
+        return {
+            "type": "object",
+            "properties": {
+                "claims": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "claim_type": {
+                                "type": "string",
+                                "enum": [
+                                    claim_type.value
+                                    for claim_type in ClaimType
+                                ],
+                            },
+                            "statement": {
+                                "type": "string",
+                            },
+                            "target": {
+                                "type": ["string", "null"],
+                            },
+                            "source_file": {
+                                "type": ["string", "null"],
+                            },
+                            "source_line": {
+                                "type": ["integer", "null"],
+                            },
+                            "category": {
+                                "type": "string",
+                                "enum": [
+                                    "error",
+                                    "risk",
+                                    "improvement",
+                                    "analysis",
+                                ],
+                            },
+                        },
+                        "required": [
+                            "claim_type",
+                            "statement",
+                            "target",
+                            "source_file",
+                            "source_line",
+                            "category",
+                        ],
+                    },
+                },
+            },
+            "required": ["claims"],
+        }
+    @staticmethod
     def _analysis_instructions() -> str:
         return """
-ANALYSEMODUS:
-Die aktuelle Benutzeranfrage verlangt eine Analyse und keine Datei?nderung.
+ANALYSEMODUS
+
+Die Benutzeranfrage verlangt eine Analyse des aktuell bereitgestellten
+Projektkontexts. Es dürfen keine Dateien verändert werden.
 
 WICHTIG:
-Die nachfolgende Systemnachricht enth?lt die aktuell f?r die KI freigegebenen
-Projektdateien. Diese Dateien sind der verf?gbare Projektkontext und sollen
-direkt analysiert werden.
+Du bist NICHT die Instanz, die einen Claim als sicher bewiesen einstuft.
+Du lieferst ausschließlich strukturierte Behauptungen als Kandidaten.
+ForgeAI prüft jeden Claim anschließend gegen deterministische lokale
+Projekt-Evidence.
 
-Frage den Benutzer NICHT erneut nach Dateiinhalt, wenn die ben?tigten Dateien
-bereits im bereitgestellten Kontext enthalten sind.
+VERWENDE AUSSCHLIESSLICH INFORMATIONEN AUS DEM BEREITGESTELLTEN KONTEXT.
 
-GRUNDSATZ:
-Ein Punkt darf nur als FEHLER bezeichnet werden, wenn er anhand des
-bereitgestellten Projektkontexts eindeutig nachweisbar ist.
+ERLAUBTE CLAIM-TYPEN:
+- file_exists
+- file_missing
+- function_exists
+- class_exists
+- module_exists
+- import_exists
+- dependency_exists
+- syntax_error
+- duplicate_event_handler
+- architecture_problem
+- unknown
 
-F?r jeden sicheren FEHLER m?ssen genannt werden:
-- Datei
-- Funktion, Klasse oder eindeutig benannte Code-Stelle
-- konkreter beobachteter Sachverhalt
-- warum daraus sicher ein Fehler folgt
+FÜR JEDEN CLAIM:
+- statement: kurze verständliche Beschreibung
+- claim_type: einer der erlaubten Claim-Typen
+- target: das konkret zu prüfende Objekt
+- source_file: konkrete Datei, wenn bekannt, sonst null
+- source_line: konkrete Zeile, wenn bekannt, sonst null
+- category: error, risk, improvement oder analysis
 
-VERBOTENE SCHLUSSFOLGERUNGEN:
-- Eine m?gliche Verbesserung ist KEIN Fehler.
-- Ein m?gliches Risiko ist KEIN Fehler.
-- Ein ungew?hnliches, aber g?ltiges Konstrukt ist KEIN Fehler.
-- Ein lokaler Import ist nicht automatisch ein zirkul?rer Import.
-- Ein Fallback ist nicht automatisch fehlerhaft.
-- Eine fehlende Datei, Sounddatei, Ressource oder Asset darf nur behauptet werden,
-  wenn ihr Fehlen im bereitgestellten Projektkontext nachweisbar ist.
-- Eine doppelte Ereignisverarbeitung darf nur behauptet werden, wenn mindestens
-  zwei konkrete Ereignisabrufe oder Verarbeitungsstellen im bereitgestellten
-  Code nachweisbar sind.
-- Ein Typfehler darf nur behauptet werden, wenn aus dem tats?chlich sichtbaren
-  Code ein falscher Typfluss eindeutig hervorgeht.
-- Vermutungen ?ber nicht bereitgestellte Dateien oder Laufzeitverhalten d?rfen
-  nicht als Tatsachen dargestellt werden.
-
-Wenn ein vermutetes Problem nicht sicher nachweisbar ist:
-- nicht als FEHLER ausgeben
-- stattdessen unter "Unsichere Risiken" nennen
-- klar als unsicher kennzeichnen
-
-Wenn keine sicheren Fehler nachweisbar sind, muss ausdr?cklich stehen:
-"Keine sicher nachweisbaren Fehler im bereitgestellten Kontext."
+REGELN:
+- Erfinde niemals target, Datei, Funktion, Klasse, Import, Modul oder Zeile.
+- Verwende source_file nur, wenn diese Datei im Kontext tatsächlich vorhanden ist.
+- Verwende source_line nur, wenn die Zeile im bereitgestellten Kontext konkret ermittelbar ist.
+- Ein möglicher Fehler ist nur ein Kandidaten-Claim, niemals ein bewiesener Fehler.
+- Ein Risiko ist kein sicherer Fehler.
+- Eine Verbesserung ist kein Fehler.
+- Fehlende Evidence bedeutet nicht automatisch, dass eine Behauptung falsch ist.
+- Bei Unsicherheit darf ein Claim trotzdem als Kandidat ausgegeben werden.
+- Die endgültige Einstufung übernimmt ForgeAI.
+- Bei duplicate_event_handler muss der Claim die konkrete Ereignisart als target enthalten.
+- Bei syntax_error muss target die konkret beobachtete Fehlermeldung enthalten.
+- Bei dependency_exists muss target die konkrete Beziehung enthalten, zum Beispiel "main -> game".
 
 AUSGABE:
-1. Sichere Fehler
-2. Unsichere Risiken
-3. Verbesserungsvorschl?ge
+Gib ausschließlich valides JSON zurück.
 
-F?r "Sichere Fehler" sind h?chstens 5 Punkte zul?ssig.
+Format:
 
-Bei jedem sicheren Fehler:
-- konkrete Fundstelle nennen
-- nur Tatsachen verwenden, die im Kontext sichtbar sind
-- keine fehlenden Informationen erg?nzen oder erfinden
+{
+  "claims": [
+    {
+      "claim_type": "duplicate_event_handler",
+      "statement": "Doppelte MOUSEBUTTONDOWN-Verarbeitung wurde festgestellt.",
+      "target": "pygame.MOUSEBUTTONDOWN",
+      "source_file": "main.py",
+      "source_line": null,
+      "category": "error"
+    }
+  ]
+}
 
-Risiken und Verbesserungsvorschl?ge d?rfen niemals als sichere Fehler bezeichnet
-werden.
+Wenn keine sinnvollen Claims erzeugt werden können:
 
-Wenn f?r eine vollst?ndige Aussage eine bestimmte Datei fehlt, nenne konkret,
-welche Datei im bereitgestellten Kontext fehlt.
+{
+  "claims": []
+}
 
-Weitere Regeln:
-- Keine Dateien ?ndern.
-- Keine JSON-actions ausgeben.
-- Keine ChangePreview erzeugen.
-- Keine ausf?hrbaren Datei?nderungsbefehle ausgeben.
-- Keine Codebl?cke oder l?ngeren Codeausz?ge reproduzieren.
-- Keine "hier ist der Befehl zum Kopieren"-Antwort erzeugen.
-- Nur den tats?chlich bereitgestellten Code analysieren.
-- Behaupte keine Funktionen, Klassen, Imports oder Codeprobleme, die im
-  bereitgestellten Dateiinhalt nicht nachweisbar sind.
+Keine Markdown-Codeblöcke.
+Keine zusätzlichen Erklärungen außerhalb des JSON.
+Keine JSON-actions.
+Keine ChangePreview.
+Keine Dateiänderungsbefehle.
+Keine selbst erfundenen Beweise.
 """
     def _action_response_format(self, request: str) -> dict | None:
         """Force structured local-model output for requests that change project files."""
@@ -1599,3 +1715,9 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
                 self.workspace.set_project_mode(ProjectMode(values["project_mode"]))
             self._apply_theme()
             self._update_status()
+
+
+
+
+
+
