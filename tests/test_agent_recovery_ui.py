@@ -54,10 +54,14 @@ def _make_window(orchestrator, task=None):
     window._agent_verification_worker = None
     window._agent_recovery_worker = None
     window._agent_project_context = "project-context"
+    window._agent_num_ctx = None
     window.model = "test-model"
     window.ollama_url = "http://localhost:11434"
     window.agent_review_enabled = True
-    window.workspace = SimpleNamespace(active_project="C:/project")
+    window.workspace = SimpleNamespace(
+        active_project="C:/project",
+        analyzer=SimpleNamespace(),
+    )
     window.input_bar = _FakeInputBar()
     window.logger = _FakeLogger()
     window.statuses = []
@@ -200,3 +204,48 @@ def test_noop_agent_plan_completes_without_approval_or_coder(monkeypatch):
     assert approval_calls == []
     assert window.statuses[-1] == "Keine " + chr(0xE4) + "nderungen erforderlich"
     assert window.input_bar.busy_values[-1] is False
+
+
+def test_recovery_refreshes_reality_before_worker_start(monkeypatch):
+    orchestrator = SimpleNamespace(
+        run=SimpleNamespace(state=AgentState.ANALYZING)
+    )
+    window = _make_window(orchestrator)
+
+    reality = SimpleNamespace()
+    window._agent_reality = reality
+
+    calls = []
+
+    class _FakeCollector:
+        def __init__(self, analyzer):
+            calls.append(("init", analyzer))
+
+        def collect_project(self, reality_arg, project):
+            calls.append(("collect", reality_arg, project))
+            assert reality_arg is reality
+            assert project == "C:/project"
+
+    monkeypatch.setattr(
+        main_window_module,
+        "RealityCollector",
+        _FakeCollector,
+    )
+
+    worker = _FakeWorker()
+    window._agent_recovery_worker = None
+
+    monkeypatch.setattr(
+        main_window_module,
+        "AgentRecoveryWorker",
+        lambda **kwargs: (
+            calls.append(("worker", kwargs["orchestrator"]))
+            or worker
+        ),
+    )
+
+    window._start_agent_recovery("1 failed")
+
+    assert calls[0] == ("init", window.workspace.analyzer)
+    assert calls[1] == ("collect", reality, "C:/project")
+    assert calls[2] == ("worker", orchestrator)

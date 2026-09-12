@@ -1408,6 +1408,12 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
             self._set_agent_status("Kein Projekt für Recovery")
             return
 
+        if self._agent_reality is not None:
+            RealityCollector(self.workspace.analyzer).collect_project(
+                self._agent_reality,
+                project,
+            )
+
         self._set_agent_status("analysiere fehlgeschlagenen Testlauf")
         self.input_bar.set_busy(True)
 

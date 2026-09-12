@@ -428,12 +428,12 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Aktuell geänderte Dateien
 
-- `forgeai/ai/agent_ui_worker.py`
 - `forgeai/ui/main_window.py`
+- `tests/test_agent_recovery_ui.py`
 
 #### Teststand
 
-- Pytest-Testfaelle: **291**
+- Pytest-Testfaelle: **292**
 
 #### Aktueller Plan
 
@@ -466,11 +466,11 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Letzte relevante Commits
 
-- `e703362 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: add deterministic reality collector`
+- `e8b229b (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: integrate project reality into agent workflow`
+- `e703362 feat: add deterministic reality collector`
 - `abb1685 feat: improve evidence-based project analysis`
 - `bd99585 fix: refine event evidence validation and documentation`
 - `415c9d3 feat: integrate validated claims into project analysis`
-- `8d37fe0 feat: add evidence-based analysis validation`
 
 Dieser Abschnitt wird automatisch aus dem lokalen Git- und Teststand
 sowie aus der aktuellen ROADMAP.md erzeugt.
