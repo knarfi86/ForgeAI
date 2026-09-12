@@ -7,6 +7,7 @@ from PySide6.QtCore import QThread, Signal
 from .agent_contracts import AgentTask
 from .agent_orchestrator import AgentOrchestrator
 from .agent_planner import AgentPlanner
+from forgeai.core.agent_reality import AgentReality
 from .agent_repairer import AgentRepairer
 from .agent_reviewer import AgentReviewer
 from .agent_analyzer import AgentAnalyzer
@@ -31,6 +32,8 @@ class AgentWorkflowWorker(QThread):
         base_url: str,
         review_enabled: bool = True,
         num_ctx: int | None = None,
+        run: AgentRun | None = None,
+        reality: AgentReality | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -40,6 +43,8 @@ class AgentWorkflowWorker(QThread):
         self.base_url = base_url
         self.review_enabled = review_enabled
         self.num_ctx = num_ctx
+        self.run_state = run
+        self.reality = reality
 
     def run(self) -> None:
         try:
@@ -62,7 +67,7 @@ class AgentWorkflowWorker(QThread):
             analyzer = AgentAnalyzer(router)
             repairer = AgentRepairer(router)
 
-            run = AgentRun(task_id=self.task.task_id)
+            run = self.run_state or AgentRun(task_id=self.task.task_id)
             orchestrator = AgentOrchestrator(
                 run,
                 planner=planner,
@@ -71,6 +76,7 @@ class AgentWorkflowWorker(QThread):
                 repairer=repairer,
                 review_enabled=self.review_enabled,
                 require_user_approval=True,
+                reality=self.reality,
             )
 
             orchestrator.start()

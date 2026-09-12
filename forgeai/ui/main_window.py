@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from forgeai.ai.agent_contracts import AgentTask
 from forgeai.ai.agent_orchestrator import AgentOrchestrator
-from forgeai.ai.agent_state import AgentState
+from forgeai.ai.agent_state import AgentRun, AgentState
 from forgeai.ai.agent_ui_worker import AgentRecoveryWorker, AgentVerificationWorker, AgentWorkflowWorker
 from forgeai.ai.change_actions import extract_change_previews
 from forgeai.ai.ollama_client import OllamaClient
@@ -24,6 +24,8 @@ from forgeai.config import Config
 from forgeai.core.ai_context import AIContextProvider
 from forgeai.core.evidence_validator import EvidenceValidator
 from forgeai.core.project_evidence import ProjectEvidence
+from forgeai.core.reality_collector import RealityCollector
+from forgeai.core.agent_reality import AgentReality
 from forgeai.core.file_indexer import FileIndexer
 from forgeai.core.history import History
 from forgeai.core.models import ProjectMode
@@ -75,6 +77,7 @@ class MainWindow(QMainWindow):
         self._agent_recovery_worker: AgentRecoveryWorker | None = None
         self._agent_orchestrator: AgentOrchestrator | None = None
         self._agent_task: AgentTask | None = None
+        self._agent_reality: AgentReality | None = None
         self._agent_plan = None
         self._agent_project_context = ""
         self._agent_num_ctx: int | None = None
@@ -512,6 +515,24 @@ class MainWindow(QMainWindow):
                 else None
             ),
         )
+
+        run = AgentRun(task_id=self._agent_task.task_id)
+        self._agent_reality = AgentReality.from_task_and_run(
+            task=self._agent_task,
+            run=run,
+            agent_id="forgeai-agent",
+            provider="ollama",
+            model=self.model,
+            role="orchestrator",
+            run_id=uuid.uuid4().hex,
+        )
+
+        if self.workspace.active_project:
+            RealityCollector(self.workspace.analyzer).collect_project(
+                self._agent_reality,
+                self.workspace.active_project,
+            )
+
         self.chat_view.add_message("assistant", "")
         self.input_bar.set_busy(True)
         self._set_agent_status("plane")
@@ -523,6 +544,8 @@ class MainWindow(QMainWindow):
             base_url=self.ollama_url,
             review_enabled=self.agent_review_enabled,
             num_ctx=self._agent_num_ctx,
+            run=run,
+            reality=self._agent_reality,
             parent=self,
         )
         self._agent_worker.completed.connect(self._agent_workflow_finished)

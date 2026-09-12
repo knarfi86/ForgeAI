@@ -427,16 +427,16 @@ Die erste technische Implementierung befindet sich in
 
 #### Aktuell betroffene Dateien
 
-- `forgeai/core/reality_collector.py`
-- `tests/core/test_reality_collector.py`
+- `forgeai/ai/agent_ui_worker.py`
+- `forgeai/ui/main_window.py`
 
 #### Letzte relevante Commits
 
-- `abb1685 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: improve evidence-based project analysis`
+- `e703362 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: add deterministic reality collector`
+- `abb1685 feat: improve evidence-based project analysis`
 - `bd99585 fix: refine event evidence validation and documentation`
 - `415c9d3 feat: integrate validated claims into project analysis`
 - `8d37fe0 feat: add evidence-based analysis validation`
-- `165f769 feat: separate project structure from approved AI context`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell
