@@ -427,20 +427,16 @@ Die erste technische Implementierung befindet sich in
 
 #### Aktuell betroffene Dateien
 
-- `forgeai/core/evidence_validator.py`
-- `forgeai/core/project_analyzer.py`
-- `forgeai/core/project_evidence.py`
-- `tests/test_evidence_validator.py`
-- `forgeai/core/project_analyzer.py.bak`
-- `forgeai/core/project_analyzer.py.before_package_link.bak`
+- `forgeai/core/reality_collector.py`
+- `tests/core/test_reality_collector.py`
 
 #### Letzte relevante Commits
 
-- `bd99585 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: refine event evidence validation and documentation`
+- `abb1685 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: improve evidence-based project analysis`
+- `bd99585 fix: refine event evidence validation and documentation`
 - `415c9d3 feat: integrate validated claims into project analysis`
 - `8d37fe0 feat: add evidence-based analysis validation`
 - `165f769 feat: separate project structure from approved AI context`
-- `68b9865 refactor: centralize AI access and add project structure context`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell
