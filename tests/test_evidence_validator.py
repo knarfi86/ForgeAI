@@ -1,6 +1,7 @@
 ﻿from forgeai.core.evidence_validator import (
     Claim,
     ClaimStatus,
+    ClaimType,
     EvidenceValidator,
 )
 from forgeai.core.project_evidence import ProjectEvidence
@@ -562,3 +563,73 @@ def test_invalid_structured_claim_payload_is_rejected():
 
     assert claims == []
 
+
+
+def test_package_dependency_exists_is_supported():
+    validator = EvidenceValidator()
+    evidence = ProjectEvidence(project_path="C:/demo")
+
+    evidence._add_observation(
+        "package_dependency",
+        "pygame-ce",
+        "Paketabh?ngigkeit pygame-ce ist in requirements.txt deklariert.",
+        scope="requirements.txt",
+    )
+
+    result = validator.validate(
+        Claim(
+            "pygame-ce ist als Abh?ngigkeit deklariert.",
+            claim_type=ClaimType.PACKAGE_DEPENDENCY_EXISTS,
+            target="pygame-ce",
+        ),
+        evidence,
+    )
+
+    assert result.status == ClaimStatus.SUPPORTED
+    assert result.evidence_ids
+
+
+def test_import_pygame_does_not_prove_pygame_ce_package_dependency():
+    validator = EvidenceValidator()
+    evidence = ProjectEvidence(project_path="C:/demo")
+
+    evidence._add_observation(
+        "import",
+        "pygame",
+        "Import pygame existiert in main.py.",
+        scope="main.py",
+    )
+
+    result = validator.validate(
+        Claim(
+            "pygame-ce ist als Abh?ngigkeit deklariert.",
+            claim_type=ClaimType.PACKAGE_DEPENDENCY_EXISTS,
+            target="pygame-ce",
+        ),
+        evidence,
+    )
+
+    assert result.status == ClaimStatus.UNVERIFIED
+
+
+def test_package_dependency_claim_uses_normalized_target():
+    validator = EvidenceValidator()
+    evidence = ProjectEvidence(project_path="C:/demo")
+
+    evidence._add_observation(
+        "package_dependency",
+        "pygame-ce",
+        "Paketabh?ngigkeit pygame-ce ist in requirements.txt deklariert.",
+        scope="requirements.txt",
+    )
+
+    result = validator.validate(
+        Claim(
+            "pygame_ce ist als Abh?ngigkeit deklariert.",
+            claim_type=ClaimType.PACKAGE_DEPENDENCY_EXISTS,
+            target="pygame_ce",
+        ),
+        evidence,
+    )
+
+    assert result.status == ClaimStatus.SUPPORTED

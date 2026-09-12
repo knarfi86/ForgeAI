@@ -1,7 +1,6 @@
 """Local, deterministic project analysis without any AI or network access."""
 
 import ast
-import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -96,7 +95,6 @@ class ProjectAnalyzer:
     def evidence_summary(self, project_path: str | Path) -> dict:
         """Return deterministic facts intended for claim/evidence validation."""
         root = self.filesystem.resolve(project_path)
-        package_dependencies = self._package_dependencies(root)
         records = self.database.fetchall(
             "SELECT relative_path, file_type FROM project_files "
             "WHERE project_path=? ORDER BY relative_path",
@@ -149,56 +147,8 @@ class ProjectAnalyzer:
             "functions": functions,
             "event_handlers": event_handlers,
             "event_retrievals": event_retrievals,
-            "package_dependencies": package_dependencies,
         }
 
-    @staticmethod
-    def _package_dependencies(root: Path) -> list[str]:
-        """Read normalized package names from requirements.txt."""
-        requirements = root / "requirements.txt"
-
-        if not requirements.is_file():
-            return []
-
-        packages: set[str] = set()
-
-        try:
-            source = requirements.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
-            return []
-
-        for raw_line in source.splitlines():
-            line = raw_line.strip()
-
-            if not line or line.startswith("#"):
-                continue
-
-            # Ignore pip options/includes for now.
-            if line.startswith("-") or line.startswith("--"):
-                continue
-
-            # Remove inline comments and environment markers.
-            line = line.split("#", 1)[0].split(";", 1)[0].strip()
-
-            if not line:
-                continue
-
-            match = re.match(
-                r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)",
-                line,
-            )
-
-            if not match:
-                continue
-
-            package = match.group(1)
-
-            # PEP 503-style normalization.
-            package = re.sub(r"[-_.]+", "-", package).casefold()
-
-            packages.add(package)
-
-        return sorted(packages)
     @staticmethod
     def _qualified_name(node: ast.AST) -> str | None:
         if isinstance(node, ast.Name):

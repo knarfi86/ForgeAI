@@ -429,12 +429,15 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 #### Aktuell geänderte Dateien
 
 - `forgeai/core/evidence_validator.py`
+- `forgeai/core/project_analyzer.py`
+- `forgeai/core/project_evidence.py`
 - `tests/test_evidence_validator.py`
-- `tests/test_main_window_routing.py`
+- `forgeai/core/project_analyzer.py.bak`
+- `forgeai/core/project_analyzer.py.before_package_link.bak`
 
 #### Teststand
 
-- Pytest-Testfaelle: **284**
+- Pytest-Testfaelle: **287**
 
 #### Aktueller Plan
 
@@ -467,11 +470,11 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Letzte relevante Commits
 
-- `415c9d3 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: integrate validated claims into project analysis`
+- `bd99585 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: refine event evidence validation and documentation`
+- `415c9d3 feat: integrate validated claims into project analysis`
 - `8d37fe0 feat: add evidence-based analysis validation`
 - `165f769 feat: separate project structure from approved AI context`
 - `68b9865 refactor: centralize AI access and add project structure context`
-- `09eaa4d fix: improve analysis routing and project context relevance`
 
 Dieser Abschnitt wird automatisch aus dem lokalen Git- und Teststand
 sowie aus der aktuellen ROADMAP.md erzeugt.

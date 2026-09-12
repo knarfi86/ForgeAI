@@ -69,6 +69,14 @@ class ProjectEvidence:
                     scope=path,
                 )
 
+        for package in summary.get("package_dependencies", []):
+            result._add_observation(
+                "package_dependency",
+                package,
+                f"Paketabh?ngigkeit {package} ist in requirements.txt deklariert.",
+                scope="requirements.txt",
+            )
+
         for path, names in summary.get("event_handlers", {}).items():
             for name in names:
                 result._add_observation(

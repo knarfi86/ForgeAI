@@ -23,6 +23,7 @@ class ClaimType(str, Enum):
     CLASS_EXISTS = "class_exists"
     MODULE_EXISTS = "module_exists"
     IMPORT_EXISTS = "import_exists"
+    PACKAGE_DEPENDENCY_EXISTS = "package_dependency_exists"
     DEPENDENCY_EXISTS = "dependency_exists"
     SYNTAX_ERROR = "syntax_error"
     DUPLICATE_EVENT_HANDLER = "duplicate_event_handler"
@@ -52,6 +53,10 @@ class ClaimValidation:
 
 class EvidenceValidator:
     """Validate model claims against deterministic project evidence."""
+
+    @staticmethod
+    def _normalize_package_name(name: str) -> str:
+        return re.sub(r"[-_.]+", "-", name).casefold()
 
     _DUPLICATE_WORDS = (
         "doppelt",
@@ -256,6 +261,43 @@ class EvidenceValidator:
                 claim=claim,
                 status=ClaimStatus.UNVERIFIED,
                 reason=f"Der Import {claim.target} konnte nicht belegt werden.",
+            )
+
+        if claim.claim_type == ClaimType.PACKAGE_DEPENDENCY_EXISTS:
+            if not claim.target:
+                return ClaimValidation(
+                    claim=claim,
+                    status=ClaimStatus.UNVERIFIED,
+                    reason="F?r PACKAGE_DEPENDENCY_EXISTS muss ein explizites target angegeben werden.",
+                )
+
+            observations = evidence.matching(
+                "package_dependency",
+                self._normalize_package_name(claim.target),
+                scope="requirements.txt",
+            )
+
+            if observations:
+                return ClaimValidation(
+                    claim=claim,
+                    status=ClaimStatus.SUPPORTED,
+                    evidence_ids=[
+                        item.evidence_id
+                        for item in evidence.all_evidence_for(observations)
+                    ],
+                    reason=(
+                        f"Die Paketabh?ngigkeit {claim.target} wurde "
+                        "in requirements.txt gefunden."
+                    ),
+                )
+
+            return ClaimValidation(
+                claim=claim,
+                status=ClaimStatus.UNVERIFIED,
+                reason=(
+                    f"Die Paketabh?ngigkeit {claim.target} konnte "
+                    "in requirements.txt nicht belegt werden."
+                ),
             )
 
         if claim.claim_type == ClaimType.DEPENDENCY_EXISTS:

@@ -96,7 +96,6 @@ class ProjectAnalyzer:
     def evidence_summary(self, project_path: str | Path) -> dict:
         """Return deterministic facts intended for claim/evidence validation."""
         root = self.filesystem.resolve(project_path)
-        package_dependencies = self._package_dependencies(root)
         records = self.database.fetchall(
             "SELECT relative_path, file_type FROM project_files "
             "WHERE project_path=? ORDER BY relative_path",
@@ -149,7 +148,6 @@ class ProjectAnalyzer:
             "functions": functions,
             "event_handlers": event_handlers,
             "event_retrievals": event_retrievals,
-            "package_dependencies": package_dependencies,
         }
 
     @staticmethod
