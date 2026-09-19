@@ -1,0 +1,1582 @@
+{
+  "name": "LGDC",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "5aec7eb6-3ec8-459a-b7dc-7a2a8456e75f",
+      "name": "Chat Trigger",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -7824,
+        624
+      ],
+      "webhookId": "fa36ff8e-7f73-4b34"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst req = String($json.chatInput ?? $json.text ?? $json.message ?? '').trim();\nif (!req) throw new Error('No request received.');\n\nconst workspace_path = 'G:/company';\n\n// Scanner: liest .py Dateien, gibt kompaktes JSON auf stdout aus\n// Begrenzt auf 14000 Zeichen damit es in Bridge stdout passt\nconst scannerScript = `import json, os, sys\nfrom pathlib import Path\n\nws = Path(os.environ.get('PYTHONPATH', '').split(os.pathsep)[0]) if 'PYTHONPATH' in os.environ else Path.cwd()\nSKIP = {'.venv','venv','__pycache__','.git','node_modules','.mypy_cache'}\nfiles = []\ntotal = 0\nLIMIT = 13000\n\nfor root, dirs, fnames in os.walk(ws):\n    dirs[:] = [d for d in dirs if d not in SKIP]\n    for fname in sorted(fnames):\n        p = Path(root) / fname\n        if p.suffix not in ('.py', '.json'): continue\n        rel = p.relative_to(ws).as_posix()\n        if rel.startswith('_scan'): continue\n        try:\n            content = p.read_text(encoding='utf-8', errors='replace')\n            # Kürze große Dateien\n            if len(content) > 3000:\n                content = content[:3000] + '\\\\n# [truncated]'\n            entry = {'path': rel, 'content': content}\n            entry_str = json.dumps(entry)\n            if total + len(entry_str) > LIMIT:\n                files.append({'path': rel, 'content': '[skipped: size limit]'})\n            else:\n                files.append(entry)\n                total += len(entry_str)\n        except Exception as e:\n            files.append({'path': rel, 'content': '', 'error': str(e)})\n\nprint(json.dumps({'ok': True, 'files': files}))\n`;\n\n// Startup-Dummy\nconst startupDummy = `import sys\\nsys.exit(0)\\n`;\n\nreturn [{json:{\n  user_request:        req,\n  workspace_path,\n  scanner_script:      scannerScript,\n  startup_dummy:       startupDummy,\n  repair_attempts:     0,\n  max_repairs:         4,\n  analysis_done:       false,\n  repair_plan:         [],\n  improved_files:      [],\n  repair_history:      [],\n  repair_loop_done:    false,\n  repair_limit_reached: false,\n  skipped_repairs:     []\n}}];\n"
+      },
+      "id": "0ce3f325-6b56-4dbd-96e9-8de383f9f227",
+      "name": "Scan Project",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3264,
+        1616
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8765/execute",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  action: 'test_project',\n  test_script: $json.test_script,\n  startup_test_script: $json.startup_test_script,\n  timeout_seconds: 120\n}) }}",
+        "options": {
+          "response": {
+            "response": {}
+          },
+          "timeout": 180000
+        }
+      },
+      "id": "ba709e39-f8de-4764-af75-c43e9b10ddac",
+      "name": "Run Initial Tests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -2400,
+        1776
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst s = $node['Parse Project Files'].json;\nlet raw = $json.body ?? $json.data ?? $json;\nif (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch {} }\nlet result = raw;\nif (result?.stage === 'compile' && result?.compile?.ok === false) {\n  const err = String(result.compile?.stderr ?? 'Compilation failed');\n  result = { ...result, ok: false,\n    smoke_result: { ok: false, stderr: 'COMPILE ERROR:\\n' + err, stdout: '', exit_code: 1 },\n    startup_result: { ok: false, stderr: 'Skipped', stdout: '', exit_code: 1 }\n  };\n}\nreturn [{json:{...s, initial_test_result: result}}];\n"
+      },
+      "id": "87807fed-85d4-4cac-a864-f3c3f35d5ee7",
+      "name": "Parse Initial Test Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2176,
+        1600
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:11434/api/chat",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: 'gpt-oss:20b',\n  stream: false,\n  keep_alive: '5m',\n  format: 'json',\n  options: { num_ctx: 32768, num_predict: 4096, temperature: 0.1, repeat_penalty: 1.1 },\n  messages: [\n    {\n      role: 'system',\n      content: `You are a senior Python game developer and code quality expert.\n\nYou receive a complete Python game project and must:\n1. Identify ALL bugs (crashes, logic errors, missing imports, layer violations)\n2. Identify quality issues (code smells, missing features the user requested, performance)\n3. Create a prioritized repair/improvement plan\n\nReturn ONLY valid JSON:\n\n{\n  \"project_summary\": \"brief description of what this project is\",\n  \"architecture_contract\": \"layer boundaries and schema rules as a string\",\n  \"issues\": [\n    {\n      \"severity\": \"critical|high|medium|low\",\n      \"file\": \"relative/path.py\",\n      \"issue\": \"precise description\",\n      \"line\": 42\n    }\n  ],\n  \"repair_plan\": [\n    {\n      \"priority\": 1,\n      \"file\": \"relative/path.py\",\n      \"instruction\": \"precise repair or improvement instruction\",\n      \"reason\": \"why this matters\"\n    }\n  ],\n  \"test_script\": \"tests/smoke_test.py\",\n  \"startup_test_script\": \"tests/startup_test.py\"\n}\n\n==================================================\nPYGAME LAYER BOUNDARY (enforce strictly)\n==================================================\n\npygame may ONLY be imported in rendering/UI/main modules.\npygame MUST NOT be imported in simulation/logic/entity modules.\n\nIf a logic module calls pygame.mouse.get_pos() or similar:\n  - This is a CRITICAL layer violation\n  - Fix: remove the pygame call, accept value as parameter instead\n  - NEVER fix by adding import pygame to logic modules\n\n==================================================\nANALYSIS RULES\n==================================================\n\nRead every file carefully before writing the repair_plan.\nThe repair_plan must be ordered by priority (1 = most critical).\nCritical bugs (crashes, SyntaxError, ImportError) always come first.\nDo not suggest changes that would break working functionality.\nThe architecture_contract must capture the layer boundaries you see.\n\nIf test results are provided, use traceback evidence first.\nsmoke_traceback and startup_traceback have highest authority.`\n    },\n    {\n      role: 'user',\n      content: JSON.stringify({\n        user_request: $json.user_request,\n        project_context: $json.project_context,\n        smoke_traceback: $json.initial_test_result?.smoke_result?.stderr ?? '',\n        startup_traceback: $json.initial_test_result?.startup_result?.stderr ?? '',\n        test_ok: $json.initial_test_result?.ok ?? null,\n        file_list: $json.src_files\n      })\n    }\n  ]\n}) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "1258c9e9-592e-4d46-b9a2-4d9d82e79802",
+      "name": "Analyst - Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -1952,
+        1600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst s = $node['Parse Initial Test Result'].json;\n\nlet raw = $json.body ?? $json.data ?? $json;\nif (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch {} }\n\nlet content = raw?.message?.content ?? raw?.content ?? '';\nif (typeof content !== 'string') content = JSON.stringify(content ?? raw);\ncontent = content.trim()\n  .replace(/^```json\\s*/i,'').replace(/^```\\s*/i,'').replace(/\\s*```$/i,'').trim();\n\nfunction repairJson(text) {\n  try { return JSON.parse(text); } catch {}\n  try {\n    let t = text.trimEnd();\n    if ((t.match(/(?<!\\\\)\"/g)||[]).length % 2 !== 0) t += '\"';\n    const opens = [];\n    let inStr = false;\n    for (let i=0; i<t.length; i++) {\n      const c=t[i], p=t[i-1];\n      if(c==='\"'&&p!=='\\\\') inStr=!inStr;\n      if(!inStr){if(c==='{')opens.push('}');else if(c==='[')opens.push(']');else if(c==='}' || c===']')opens.pop();}\n    }\n    t = t.replace(/,\\s*$/,'') + opens.reverse().join('');\n    return JSON.parse(t);\n  } catch {}\n  throw new Error('Cannot parse analyst output: ' + text.slice(0,200));\n}\n\nconst analysis = repairJson(content);\n\nconst repairPlan = Array.isArray(analysis.repair_plan)\n  ? analysis.repair_plan\n      .filter(r => r && r.file && r.instruction)\n      .map((r,i) => ({...r, priority: r.priority ?? i+1}))\n      .sort((a,b) => a.priority - b.priority)\n  : [];\n\nif (!repairPlan.length) {\n  throw new Error('Analyst returned empty repair_plan.');\n}\n\n// Normalisiere Dateipfade\nconst norm = p => String(p).replace(/\\\\/g,'/').replace(/^\\.\\//,'').trim();\nconst normalizedPlan = repairPlan.map(r => ({...r, file: norm(r.file)}));\n\n// test_script aus Analyse oder Fallback\nconst testScript = norm(analysis.test_script ?? s.test_script ?? 'tests/smoke_test.py');\nconst startupScript = norm(analysis.startup_test_script ?? s.startup_test_script ?? 'tests/startup_test.py');\n\nreturn [{json:{\n  ...s,\n  project_summary: String(analysis.project_summary ?? ''),\n  architecture_contract: String(analysis.architecture_contract ?? ''),\n  issues: Array.isArray(analysis.issues) ? analysis.issues : [],\n  repair_plan: normalizedPlan,\n  remaining_repairs: [...normalizedPlan],\n  test_script: testScript,\n  startup_test_script: startupScript,\n  analysis_done: true\n}}];\n"
+      },
+      "id": "d9c00053-6cb0-449d-9e9a-07a7695ae910",
+      "name": "Parse Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1744,
+        1600
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": [
+          {
+            "leftValue": "={{ ($json.remaining_repairs?.length ?? 0) > 0 && ($json.repair_attempts ?? 0) < ($json.max_repairs ?? 4) }}",
+            "rightValue": 0,
+            "operator": {
+              "type": "number",
+              "operation": "gt"
+            },
+            "id": "d0d8ee2a-4fab-4be3"
+          }
+        ],
+        "options": {}
+      },
+      "id": "43a40553-c605-4fdb-becb-e35eb00a6157",
+      "name": "Repairs Remaining?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1520,
+        1600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $json;\n\n// Helper: normalize file paths (remove leading ./, backslashes, etc.)\nconst norm = p => String(p ?? '').replace(/\\\\/g, '/').replace(/^\\.\\/+/, '').trim();\n\n// All files that were generated by the scanner\nconst files = Array.isArray(s.generated_files) ? s.generated_files : [];\n\n// Remaining repairs queue\nlet remaining = Array.isArray(s.remaining_repairs) ? [...s.remaining_repairs] : [];\n\n// If we have reached the max number of repairs – stop immediately\nconst maxRepairs = Math.max(0, Number(s.max_repairs ?? 4));\nconst attempts   = Math.max(0, Number(s.repair_attempts ?? 0));\n\nif (attempts >= maxRepairs) {\n  return [{\n    json: {\n      ...s,\n      repair_limit_reached: true,\n      repair_loop_done: true,\n      current_repair: null,\n      repair_target: '',\n      repair_context: [],\n      remaining_repairs: remaining\n    }\n  }];\n}\n\n// Skip invalid / missing entries in the queue (but do not increase attempts)\nwhile (remaining.length > 0) {\n  const candidate   = remaining[0];\n  const candidatePath = norm(candidate?.file);\n  const found = files.find(f => norm(f?.path) === candidatePath);\n\n  if (candidate && candidatePath && found) break;\n  remaining = remaining.slice(1);\n}\n\nif (!remaining.length) {\n  return [{\n    json: {\n      ...s,\n      repair_loop_done: true,\n      current_repair: null,\n      repair_target: '',\n      repair_context: [],\n      remaining_repairs: [],\n      skipped_repairs: [...(s.skipped_repairs ?? []), ...remaining] // nothing left\n    }\n  }];\n}\n\n// We have a target – pick the first remaining repair\nconst current    = remaining[0];\nlet   targetPath = norm(current.file);\nlet   targetFile = files.find(f => norm(f?.path) === targetPath);\n\n// Fallback: if the target file was not found, use the first file from the scan\nif (!targetFile && files.length > 0) {\n  targetFile = files[0];\n  targetPath = norm(targetFile.path);\n}\n\nif (!targetFile) {\n  // No file at all – give up for this run\n  return [{\n    json: {\n      ...s,\n      repair_loop_done: true,\n      current_repair: null,\n      repair_target: '',\n      repair_context: [],\n      remaining_repairs: remaining.slice(1),\n      skipped_repairs: [...(s.skipped_repairs ?? []), targetPath]\n    }\n  }];\n}\n\n// Build context: the target file + any imports it declares\nconst contextFiles = [];\nconst seen         = new Set([targetPath]);\n\ncontextFiles.push({\n  path: targetFile.path,\n  content: String(targetFile.content ?? ''),\n  reason: 'repair target'\n});\n\nconst importLines = String(targetFile.content ?? '')\n  .split('\\n')\n  .filter(l => /^\\s*(from|import)\\s+/.test(l));\n\nfor (const line of importLines) {\n  const m = line.match(\n    /^\\s*from\\s+([\\w.]+)\\s+import|^\\s*import\\s+([\\w.]+)/\n  );\n  if (!m) continue;\n\n  const mod = (m[1] || m[2] || '').split('.')[0];\n  const candidates = [\n    mod + '.py',\n    'core/' + mod + '.py',\n    'ui/' + mod + '.py',\n    'network/' + mod + '.py',\n    'utils/' + mod + '.py'\n  ];\n\n  for (const c of candidates) {\n    const dep = files.find(\n      f => norm(f?.path) === c || norm(f?.path).endsWith('/' + mod + '.py')\n    );\n    if (dep && !seen.has(norm(dep.path))) {\n      seen.add(norm(dep.path));\n      contextFiles.push({\n        path: dep.path,\n        content: String(dep.content ?? ''),\n        reason: 'dependency'\n      });\n      break;\n    }\n  }\n}\n\nreturn [\n  {\n    json: {\n      ...s,\n      current_repair: current,\n      repair_target: targetPath,\n      repair_source: String(targetFile.content ?? ''),\n      repair_instruction: String(current.instruction ?? ''),\n      repair_reason: String(current.reason ?? ''),\n      repair_context: contextFiles,\n      remaining_repairs: remaining,\n      repair_loop_done: false,\n      repair_limit_reached: false\n    }\n  }\n];"
+      },
+      "id": "6614b110-5842-448f-8220-5d5211c5bc51",
+      "name": "Prepare Next Repair",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1296,
+        1472
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:11434/api/chat",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: 'deepseek-coder-v2:16b',\n  stream: false,\n  keep_alive: '10m',\n  options: { num_ctx: 16384, num_predict: 6000, temperature: 0.15, repeat_penalty: 1.15, repeat_last_n: 256 },\n  messages: [\n    {\n      role: 'system',\n      content: `You are an expert Python game developer performing a targeted repair or improvement.\n\nReturn ONLY raw Python source code.\nStart directly with the first line of code.\nNo JSON wrapper. No Markdown fences. No explanations.\n\nYou receive:\n- target_file: the file to repair/improve\n- repair_instruction: exactly what to change and why\n- repair_reason: the motivation\n- repair_context: the current source and dependencies\n\nRULES:\n- Implement the instruction exactly and completely\n- Preserve all existing functionality not mentioned in the instruction\n- Keep all existing imports that are still needed\n- Do not add imports that are not needed\n- Do not stub methods with ... or pass unless intentionally abstract\n- Write complete, runnable Python code\n\nPYGAME LAYER BOUNDARY:\n- If target is a logic/simulation module: NO pygame imports, NO pygame calls\n- Accept UI state as parameters instead of reading pygame directly\n- If target is a rendering/UI module: pygame imports are allowed\n\nReturn the COMPLETE corrected file. Nothing else.`\n    },\n    {\n      role: 'user',\n      content: JSON.stringify({\n        target_file: $json.repair_target,\n        repair_instruction: $json.repair_instruction,\n        repair_reason: $json.repair_reason,\n        architecture_contract: $json.architecture_contract,\n        repair_context: $json.repair_context\n      })\n    }\n  ]\n}) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "b47af0be-5d00-4058-a305-56eb2af03d79",
+      "name": "Repair Coder - Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -1072,
+        1472
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $node['Prepare Next Repair'].json;\n\nlet raw = $json.body ?? $json.data ?? $json;\n\nif (typeof raw === 'string') {\n  try { raw = JSON.parse(raw); } catch { /* bleibt String */ }\n}\n\nlet source =\n  raw?.message?.content ??\n  raw?.response ??\n  raw?.content ??\n  '';\n\nif (typeof source !== 'string') {\n  source = JSON.stringify(source ?? '');\n}\n\n// Fallback JSON-Wrapper\nconst trimmed = source.trim();\nif (trimmed.startsWith('{')) {\n  try {\n    const parsed = JSON.parse(trimmed);\n    if (typeof parsed?.content === 'string') source = parsed.content;\n    else if (typeof parsed?.code === 'string') source = parsed.code;\n    else if (typeof parsed?.response === 'string') source = parsed.response;\n  } catch { /* kein JSON */ }\n}\n\n// Markdown entfernen\nsource = source\n  .trim()\n  .replace(/^```(?:python|py|text)?\\r?\\n?/i, '')\n  .replace(/\\r?\\n?```$/i, '')\n  .trim();\n\n// Truncation Recovery\nif (!source || source.length < 20) {\n  const raw_str = typeof raw === 'string' ? raw : JSON.stringify(raw ?? '');\n  const match = raw_str.match(/\"(?:content|code|response)\"\\s*:\\s*\"([\\s\\S]+)/);\n  if (match) {\n    let extracted = match[1];\n    const endQuote = extracted.search(/(?<!\\\\)\"/);\n    if (endQuote > 0) extracted = extracted.slice(0, endQuote);\n    try { source = JSON.parse('\"' + extracted + '\"'); }\n    catch { source = extracted; }\n  }\n}\n\nif (!source || source.trim().length < 10) {\n  const preview = JSON.stringify(raw).slice(0, 400);\n  throw new Error(\n    'Repair Coder returned empty or unusable source.\\nRaw preview: ' + preview\n  );\n}\n\nreturn [{\n  json: {\n    ...s,\n    repair_source: source.trim()\n  }\n}];"
+      },
+      "id": "b6d9b2b2-341c-4741-8d0b-d2be279f9e41",
+      "name": "Normalize Repair Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -864,
+        1472
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $json;\n\n// Normalisiere den Zielpfad\nlet target = String(s.repair_target ?? '')\n  .replace(/\\\\/g, '/')\n  .replace(/^\\.\\/+/, '')\n  .trim();\n\n// Quelle (Code), der geschrieben werden soll\nconst source = String(s.repair_source ?? '');\n\n// Falls kein Target vorhanden ist, versuche das erste File des Scan‑Ergebnisses zu nutzen\nif (!target && Array.isArray(s.generated_files) && s.generated_files.length > 0) {\n  const first = s.generated_files[0].path ?? '';\n  target = String(first)\n    .replace(/\\\\/g, '/')\n    .replace(/^\\.\\/+/, '')\n    .trim();\n}\n\nif (!target) {\n  throw new Error(\n    'Repair payload invalid: repair_target is empty. Prepare Next Repair did not provide a target file.'\n  );\n}\n\n// Pfad muss relativ zum Workspace sein\nif (\n  target.startsWith('/') ||\n  /^[A-Za-z]:\\\\//.test(target) ||\n  target.split('/').includes('..')\n) {\n  throw new Error(\n    'Repair payload invalid: repair_target must be a relative workspace path. Got: ' +\n      target\n  );\n}\n\n// Prüfe, ob die Datei im Scan‑Ergebnis vorkommt\nconst generated = Array.isArray(s.generated_files) ? s.generated_files : [];\nconst targetExists = generated.some(f =>\n  String(f?.path ?? '')\n    .replace(/\\\\/g, '/')\n    .replace(/^\\.\\/+/, '')\n    .trim() === target\n);\n\nif (!targetExists) {\n  throw new Error(\n    'Repair payload invalid: target is not present in generated_files: ' + target\n  );\n}\n\nif (!source.trim()) {\n  throw new Error('Repair payload invalid: repair_source is empty.');\n}\n\n// Payload für den Bridge‑Aufruf\nconst bridge_write_payload = {\n  action: 'write_file',\n  path: target,\n  content: source\n};\n\nreturn [\n  {\n    json: {\n      ...s,\n      repair_target: target,\n      repair_source: source,\n      bridge_write_payload,\n      bridge_write_payload_json: JSON.stringify(bridge_write_payload)\n    }\n  }\n];"
+      },
+      "id": "741a1b6a-f6a4-4a1f-abc7-678b1b4d5e72",
+      "name": "Validate Repair Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        1472
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8765/execute",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.bridge_write_payload_json }}",
+        "options": {
+          "response": {
+            "response": {}
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "b08c581f-9d79-4be3-89be-eeb874fd2a52",
+      "name": "Write Repair via Bridge",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -432,
+        1472
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $node['Normalize Repair Output'].json;\n\nlet raw = $json.body ?? $json.data ?? $json;\nif (typeof raw === 'string') {\n  try { raw = JSON.parse(raw); } catch {}\n}\n\nif (raw?.ok === false) {\n  throw new Error('Bridge refused write: ' + JSON.stringify(raw));\n}\n\nconst target = String(s.repair_target ?? '').replace(/\\\\/g, '/').replace(/^\\.\\/+/, '').trim();\nif (!target) {\n  throw new Error('No repair_target available after successful coder output.');\n}\n\nconst files = (s.generated_files ?? []).map(f =>\n  String(f.path ?? '').replace(/\\\\/g, '/').replace(/^\\.\\/+/, '').trim() === target\n    ? { ...f, content: String(s.repair_source ?? '') }\n    : f\n);\n\nconst queue = Array.isArray(s.remaining_repairs) ? [...s.remaining_repairs] : [];\nconst first = queue[0];\nconst firstPath = String(first?.file ?? '').replace(/\\\\/g, '/').replace(/^\\.\\/+/, '').trim();\n\nif (firstPath !== target) {\n  throw new Error(\n    'Repair queue/state mismatch. Queue head=' + firstPath + ', target=' + target\n  );\n}\n\nconst nextQueue = queue.slice(1);\nconst nextAttempts = Math.max(0, Number(s.repair_attempts ?? 0)) + 1;\n\nreturn [{\n  json: {\n    ...s,\n    generated_files: files,\n    improved_files: [...(s.improved_files ?? []), target],\n    remaining_repairs: nextQueue,\n    repair_attempts: nextAttempts,\n    last_repair: {\n      path: target,\n      instruction: s.repair_instruction,\n      attempt: nextAttempts\n    },\n    repair_loop_done: nextQueue.length === 0,\n    repair_limit_reached: nextAttempts >= Number(s.max_repairs ?? 4)\n  }\n}];"
+      },
+      "id": "aab40822-43ae-438d-aff3-262ed6452953",
+      "name": "Record Repair Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8765/execute",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  action: 'test_project',\n  test_script: $json.test_script,\n  startup_test_script: $json.startup_test_script,\n  timeout_seconds: 120\n}) }}",
+        "options": {
+          "response": {
+            "response": {}
+          },
+          "timeout": 180000
+        }
+      },
+      "id": "508d24eb-e618-46a1-a1f4-a56fb6b223ed",
+      "name": "Run Final Tests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -1296,
+        1712
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst s = $node['Parse Analysis'].json;\nlet raw = $json.body ?? $json.data ?? $json;\nif (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch {} }\nlet result = raw;\nif (result?.stage === 'compile' && result?.compile?.ok === false) {\n  const err = String(result.compile?.stderr ?? 'Compilation failed');\n  result = { ...result, ok: false,\n    smoke_result: { ok: false, stderr: 'COMPILE ERROR:\\n' + err, stdout: '', exit_code: 1 },\n    startup_result: { ok: false, stderr: 'Skipped', stdout: '', exit_code: 1 }\n  };\n}\nreturn [{json:{...s, final_test_result: result}}];\n"
+      },
+      "id": "a3dc3c62-5e00-4a11-b505-ff1d5c690d7a",
+      "name": "Parse Final Test Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        1712
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:11434/api/chat",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: 'qwen2.5-coder:7b',\n  stream: false,\n  keep_alive: '0',\n  format: 'json',\n  options: { num_ctx: 32768, num_predict: 2048 },\n  messages: [\n    {\n      role: 'system',\n      content: `You are the QA lead verifying a repaired Python game project.\n\nReturn ONLY valid JSON:\n\n{\n  \"passed\": boolean,\n  \"summary\": \"string\",\n  \"remaining_issues\": [\"string\"],\n  \"improvements_made\": [\"string\"],\n  \"repairs\": [\n    {\"path\": \"relative/path.py\", \"instruction\": \"precise repair instruction\"}\n  ]\n}\n\nTRACEBACK ANALYSIS IS MANDATORY.\nRead smoke_traceback and startup_traceback line by line.\nFor every error: identify exact file, line, and root cause.\n\nLAYER BOUNDARY CHECK:\n- pygame.* calls in logic/simulation modules = CRITICAL violation\n- Fix = remove the call and accept value as parameter, NOT add import\n\nFORBIDDEN repair instructions:\n- \"Add import X\" when X should not be in that module (layer violation)\n- Identical before/after text\n- Vague instructions without specific file/line reference\n\nReturn ONLY the JSON object.`\n    },\n    {\n      role: 'user',\n      content: JSON.stringify({\n        architecture_contract: $json.architecture_contract,\n        project: $json.project_context,\n        smoke_traceback: $json.final_test_result?.smoke_result?.stderr ?? '',\n        startup_traceback: $json.final_test_result?.startup_result?.stderr ?? '',\n        test_result: $json.final_test_result,\n        improved_files: $json.improved_files ?? [],\n        original_issues: $json.issues ?? []\n      })\n    }\n  ]\n}) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "e82f873e-7e7d-42a8-876d-83fd81128d0e",
+      "name": "Final Verifier - Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -864,
+        1712
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst s = $node['Parse Final Test Result'].json;\nlet raw = $json.body ?? $json.data ?? $json;\nif (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch {} }\nlet content = raw?.message?.content ?? raw?.content ?? '';\nif (typeof content !== 'string') content = JSON.stringify(content ?? raw);\ncontent = content.trim()\n  .replace(/^```json\\s*/i,'').replace(/^```\\s*/i,'').replace(/\\s*```$/i,'').trim();\n\nfunction repairJson(text) {\n  try { return JSON.parse(text); } catch {}\n  try {\n    let t = text.trimEnd();\n    if ((t.match(/(?<!\\\\)\"/g)||[]).length % 2 !== 0) t += '\"';\n    const opens=[];let inStr=false;\n    for(let i=0;i<t.length;i++){const c=t[i],p=t[i-1];if(c==='\"'&&p!=='\\\\')inStr=!inStr;if(!inStr){if(c==='{')opens.push('}');else if(c==='[')opens.push(']');else if(c==='}' || c===']')opens.pop();}}\n    t=t.replace(/,\\s*$/,'')+opens.reverse().join('');return JSON.parse(t);\n  } catch {}\n  return {passed:false,summary:'Verification parse error',remaining_issues:[],improvements_made:[],repairs:[]};\n}\n\nconst v = repairJson(content);\nreturn [{json:{...s, verification: v}}];\n"
+      },
+      "id": "de083458-a05a-49a5-852b-7f0a4ac45cbf",
+      "name": "Parse Final Verification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        1712
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": [
+          {
+            "leftValue": "={{ $json.verification.passed && $json.final_test_result?.ok === true }}",
+            "rightValue": true,
+            "operator": {
+              "type": "boolean",
+              "operation": "true"
+            },
+            "id": "c8ef65f6-7653-4477"
+          }
+        ],
+        "options": {}
+      },
+      "id": "da565ca9-67f8-46f4-ac8a-3f1569f85b91",
+      "name": "Final Quality Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        1712
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst s = $json;\nreturn [{json:{\n  ok: true,\n  status: 'IMPROVED',\n  workspace_path: s.workspace_path,\n  project_summary: s.project_summary,\n  files_analyzed: (s.generated_files ?? []).length,\n  files_improved: s.improved_files ?? [],\n  issues_found: (s.issues ?? []).length,\n  repairs_applied: s.repair_attempts ?? 0,\n  test_result: s.final_test_result,\n  verification: s.verification,\n  improvements: s.verification?.improvements_made ?? []\n}}];\n"
+      },
+      "id": "795eab28-1675-4cb0-aea2-0ad900f92da6",
+      "name": "Success Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        1616
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst s = $json;\nreturn [{json:{\n  ok: false,\n  status: 'PARTIAL',\n  workspace_path: s.workspace_path,\n  project_summary: s.project_summary,\n  files_analyzed: (s.generated_files ?? []).length,\n  files_improved: s.improved_files ?? [],\n  issues_found: (s.issues ?? []).length,\n  repairs_applied: s.repair_attempts ?? 0,\n  test_result: s.final_test_result,\n  verification: s.verification,\n  remaining_issues: s.verification?.remaining_issues ?? [],\n  note: 'Some repairs were applied but the project still has issues. Check remaining_issues.'\n}}];\n"
+      },
+      "id": "29392685-037e-47df-b0dd-3447a13c0528",
+      "name": "Failure Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        1824
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8765/execute",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  action: 'write_file',\n  path: '_scanner.py',\n  content: String($json.scanner_script ?? '')\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "7fff67c3-0978-4693-9d60-2514fdbde305",
+      "name": "Write Scanner Script",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -3040,
+        1504
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8765/execute",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  action: 'write_file',\n  path: '_scanner_startup.py',\n  content: String($json.startup_dummy ?? '')\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "3e2a3693-79b9-4991-9e55-0caaf6b28fc5",
+      "name": "Write Startup Dummy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -2816,
+        1504
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8765/execute",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  action: 'test_project',\n  test_script: '_scanner.py',\n  startup_test_script: '_scanner_startup.py',\n  timeout_seconds: 30\n}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "83dc3e64-8b34-4bea-bb30-5950938f8920",
+      "name": "Run Scanner via Bridge",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -2592,
+        1504
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst s = $node['Scan Project'].json;\n\nlet raw = $json.body ?? $json.data ?? $json;\nif (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch {} }\n\n// Debug-Info für Fehlersuche\nconst compileOk    = raw?.compile?.ok;\nconst compileErr   = String(raw?.compile?.stderr ?? '');\nconst smokeStdout  = String(raw?.smoke_result?.stdout ?? '').trim();\nconst smokeStderr  = String(raw?.smoke_result?.stderr ?? '').trim();\nconst startupOk    = raw?.startup_result?.ok;\n\n// Compile-Fehler im Scanner selbst\nif (compileOk === false) {\n  throw new Error('Scanner script has syntax error:\\n' + compileErr);\n}\n\n// Scanner-Fehler in stderr\nif (!smokeStdout && smokeStderr) {\n  throw new Error('Scanner failed:\\n' + smokeStderr.slice(0, 500));\n}\n\n// JSON aus stdout parsen\nlet scanResult = null;\ntry {\n  const lines = smokeStdout.split('\\n').filter(l => l.trim().startsWith('{'));\n  if (lines.length > 0) {\n    scanResult = JSON.parse(lines[lines.length - 1]);\n  }\n} catch(e) {\n  throw new Error(\n    'Cannot parse scanner JSON output.\\n' +\n    'stdout: ' + smokeStdout.slice(0, 400) + '\\n' +\n    'stderr: ' + smokeStderr.slice(0, 200)\n  );\n}\n\nif (!scanResult?.ok || !Array.isArray(scanResult?.files)) {\n  throw new Error(\n    'Scanner returned no files.\\n' +\n    'stdout: ' + smokeStdout.slice(0, 400) + '\\n' +\n    'stderr: ' + smokeStderr.slice(0, 200) + '\\n' +\n    'compile_ok: ' + compileOk + '\\n' +\n    'startup_ok: ' + startupOk\n  );\n}\n\nconst files = scanResult.files;\nif (!files.length) {\n  throw new Error('No files found in workspace: ' + s.workspace_path);\n}\n\nconst pyFiles     = files.filter(f => f.path.endsWith('.py') && !f.path.startsWith('_scan'));\nconst testFiles   = pyFiles.filter(f => f.path.includes('test'));\nconst srcFiles    = pyFiles.filter(f => !f.path.includes('test'));\nconst configFiles = files.filter(f => f.path.endsWith('.json'));\n\nconst smokeTest   = testFiles.find(f => f.path.includes('smoke'))?.path\n                 ?? testFiles[0]?.path\n                 ?? 'tests/smoke_test.py';\nconst startupTest = testFiles.find(f => f.path.includes('startup'))?.path\n                 ?? testFiles.find(f => f.path !== smokeTest)?.path\n                 ?? 'tests/startup_test.py';\n\nconst project_context = pyFiles\n  .map(f => 'FILE: ' + f.path + '\\n' + String(f.content ?? ''))\n  .join('\\n\\n')\n  .slice(0, 55000);\n\nreturn [{json:{\n  ...s,\n  project_files:       files,\n  src_files:           srcFiles.map(f => f.path),\n  test_files:          testFiles.map(f => f.path),\n  config_files:        configFiles.map(f => f.path),\n  generated_files:     files.map(f => ({path: f.path, content: String(f.content ?? '')})),\n  test_script:         smokeTest,\n  startup_test_script: startupTest,\n  project_context,\n  file_count:          files.length\n}}];\n"
+      },
+      "id": "b26aa7c5-b754-4f24-a01c-36bab5e7d966",
+      "name": "Parse Project Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2384,
+        1504
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const request = String($json.chatInput ?? $json.text ?? $json.message ?? '').trim();\nif (!request) throw new Error('No development request received.');\nconst workspace_path = 'G:/company';\nreturn [{json:{\n  user_request: request,\n  workspace_path,\n  generated_files: [],\n  remaining_files: [],\n  repair_attempts: 0,\n  max_repairs: 3,\n  current_file: null,\n  repair_instruction: '',\n  test_script: '',\n  startup_test_script: '',\n  repair_history: []\n}}];"
+      },
+      "id": "a02bc54f-c590-44d1-9a37-00ea86b7d5aa",
+      "name": "Project Settings1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -7424,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:11434/api/chat",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: 'gpt-oss:20b',\n  stream: false,\n  keep_alive: '0',\n  format: 'json',\n  options: { num_ctx: 8192, num_predict: 4096 },\n  messages: [\n    {\n      role: 'system',\n      content: `You are the lead software architect for a local Python application project.\n\nReturn ONLY valid JSON.\n\n==================================================\nCRITICAL OUTPUT FORMAT\n==================================================\n\nThe exact output keys are:\n\narchitecture (string),\narchitecture_contract (string),\nfile_manifest (array of {path, purpose, depends_on}),\nbuild_order (array of paths),\ntest_script (string),\nstartup_test_script (string).\n\nThe key \"test_script\" is the smoke-test file path.\nThe key \"startup_test_script\" is the startup-test file path.\n\nBoth values MUST be relative POSIX file paths.\nThe startup_test_script MUST be: \"tests/startup_test.py\"\nThe test_script MUST be: \"tests/smoke_test.py\"\nBoth paths MUST exist exactly once in file_manifest and build_order.\n\nNEVER put Python source code into test_script or startup_test_script.\nNEVER put imports into these fields.\n\n==================================================\nPRODUCT REQUIREMENT\n==================================================\n\nThe project must be a COMPLETE, RUNNABLE Python application\nthat fully implements what the user requested.\n\nDo not replace the requested project with a demo, prototype,\nstub, or technology showcase.\n\nThe project must be directly startable and usable without\nrequiring external services, except where the user explicitly\nrequested them.\n\nDerive ALL product requirements from the user's request.\nDo not impose a genre, framework, or architecture\nthat the user did not ask for.\n\n==================================================\nARCHITECTURE RULES\n==================================================\n\nUse a small number of meaningful modules, preferably 8-14 files.\nAvoid dozens of tiny files. Separate responsibilities clearly.\n\nLAYER BOUNDARIES (enforce strictly):\n\nIdentify which layers your architecture has:\n- Core logic / simulation layer:\n  Pure Python. NO UI framework imports (pygame, tkinter, PyQt, etc.).\n  NO input reading. All external state comes in as parameters.\n- Rendering / UI layer:\n  May import the UI framework. Reads input and passes it to\n  core logic as parameters. NEVER embeds game logic.\n- Networking layer: NO UI framework imports.\n- Entry point (main.py): wires layers together.\n\nThe architecture_contract MUST:\n1. Name which modules belong to which layer.\n2. State which imports are forbidden in each layer.\n3. Define the exact data schema for all shared configuration\n   objects (entity types, level definitions, config dicts).\n   For every field: whether it is a scalar, list, or dict.\n   Example: all multi-level progression fields (upgrade costs,\n   stat curves) MUST be lists indexed by level, never scalars.\n4. Define all public interfaces between modules (function\n   signatures, return types).\n\nThe core simulation/logic MUST NOT depend on any UI framework.\n\n==================================================\nTEST REQUIREMENTS\n==================================================\n\nInclude exactly two test files:\n- tests/smoke_test.py: deterministic unit tests using Python\n  unittest. Tests MUST terminate automatically, use real\n  production classes, not start infinite loops, not open\n  real windows, not require network, not require user input.\n  Use os.environ SDL_VIDEODRIVER=dummy if pygame init needed.\n- tests/startup_test.py: controlled application startup test.\n  Verifies the app can initialize and shut down cleanly.\n\nBoth test files MUST be in file_manifest and build_order.\ntest_script != startup_test_script.\n\n==================================================\nPATH RULES\n==================================================\n\nAll paths must be relative POSIX paths.\nNo absolute paths, no markdown, no explanations outside JSON.\nbuild_order must contain every manifest path exactly once.\nDependencies must appear earlier in build_order.`\n    },\n    {\n      role: 'user',\n      content: $json.user_request\n    }\n  ]\n}) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "6224fb11-3b98-4961-a4bc-e66f13953d5d",
+      "name": "Architect - Ollama1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -7216,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $node['Project Settings1'].json;\n\nlet raw = $json.body ?? $json.data ?? $json.response ?? $json;\n\nif (typeof raw === 'string') {\n  raw = JSON.parse(raw);\n}\n\nlet content = raw?.message?.content ?? raw?.content;\n\nif (typeof content !== 'string') {\n  content = JSON.stringify(content ?? raw);\n}\n\ncontent = content\n  .trim()\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nconst a = JSON.parse(content);\n\nif (!a || typeof a !== 'object' || Array.isArray(a)) {\n  throw new Error('Architect did not return an object.');\n}\n\n/*\n * Required architecture fields\n */\n\nif (\n  typeof a.architecture_contract !== 'string' ||\n  !a.architecture_contract.trim()\n) {\n  throw new Error('Missing architecture_contract.');\n}\n\nif (!Array.isArray(a.file_manifest) || !a.file_manifest.length) {\n  throw new Error('Missing file_manifest.');\n}\n\n/*\n * Path normalization\n */\n\nconst norm = p =>\n  String(p)\n    .replace(/\\\\/g, '/')\n    .replace(/^\\.\\/+/, '')\n    .trim();\n\n/*\n * Normalize manifest\n */\n\nconst manifest = a.file_manifest.map((f, index) => {\n  if (!f || typeof f !== 'object') {\n    throw new Error(\n      `Invalid file_manifest entry at index ${index}.`\n    );\n  }\n\n  const path = norm(f.path);\n\n  if (!path) {\n    throw new Error(\n      `Missing path in file_manifest entry ${index}.`\n    );\n  }\n\n  return {\n    path,\n    purpose: String(f.purpose ?? ''),\n    depends_on: Array.isArray(f.depends_on)\n      ? f.depends_on.map(norm).filter(Boolean)\n      : []\n  };\n});\n\nconst paths = manifest.map(f => f.path);\nconst pathSet = new Set(paths);\n\n/*\n * Validate project paths\n */\n\nif (new Set(paths).size !== paths.length) {\n  const duplicates = paths.filter(\n    (p, i) => paths.indexOf(p) !== i\n  );\n  throw new Error(\n    'Duplicate manifest path: ' +\n    [...new Set(duplicates)].join(', ')\n  );\n}\n\nfor (const p of paths) {\n  if (\n    !p ||\n    p.startsWith('/') ||\n    /^[A-Za-z]:/.test(p) ||\n    p.split('/').includes('..') ||\n    p.includes('\\0')\n  ) {\n    throw new Error('Unsafe path: ' + p);\n  }\n}\n\n/*\n * Separate project dependencies from external dependencies.\n */\n\nconst externalDependencies = new Set();\n\nfor (const file of manifest) {\n  const projectDeps = [];\n  for (const dep of file.depends_on) {\n    if (dep === file.path) continue;\n    if (pathSet.has(dep)) {\n      projectDeps.push(dep);\n    } else {\n      externalDependencies.add(dep);\n    }\n  }\n  file.depends_on = [...new Set(projectDeps)];\n}\n\n/*\n * Resolve test_script with alias fallback.\n * The model may use different key names.\n */\n\nfunction resolveField(obj, ...keys) {\n  for (const k of keys) {\n    if (typeof obj[k] === 'string' && obj[k].trim()) {\n      return obj[k].trim();\n    }\n  }\n  return null;\n}\n\nconst rawTestScript = resolveField(\n  a,\n  'test_script',\n  'smoke_test',\n  'smoke_test_script',\n  'test_file',\n  'smoke_test_path'\n);\n\nconst rawStartupScript = resolveField(\n  a,\n  'startup_test_script',\n  'startup_test',\n  'startup_script',\n  'startup_test_path',\n  'application_test_script'\n);\n\n/*\n * If fields are missing entirely, scan manifest for\n * canonical paths and use them as fallback.\n */\n\nconst CANONICAL_SMOKE   = 'tests/smoke_test.py';\nconst CANONICAL_STARTUP = 'tests/startup_test.py';\n\nconst effectiveTestScript = rawTestScript\n  ?? (pathSet.has(CANONICAL_SMOKE) ? CANONICAL_SMOKE : null);\n\nconst effectiveStartupScript = rawStartupScript\n  ?? (pathSet.has(CANONICAL_STARTUP) ? CANONICAL_STARTUP : null);\n\nif (!effectiveTestScript) {\n  throw new Error(\n    'Architect did not return test_script and ' +\n    CANONICAL_SMOKE + ' is not in file_manifest. ' +\n    'Known keys: ' + Object.keys(a).join(', ')\n  );\n}\n\nif (!effectiveStartupScript) {\n  throw new Error(\n    'Architect did not return startup_test_script and ' +\n    CANONICAL_STARTUP + ' is not in file_manifest. ' +\n    'Known keys: ' + Object.keys(a).join(', ')\n  );\n}\n\n/*\n * Validate test-script paths\n */\n\nfunction validateScriptPath(value, fieldName) {\n  const scriptPath = norm(value);\n\n  if (\n    scriptPath.includes('\\n') ||\n    scriptPath.includes('\\r') ||\n    /^\\s*(from|import|def|class)\\b/i.test(scriptPath) ||\n    scriptPath.includes('(') ||\n    scriptPath.includes('{') ||\n    scriptPath.includes('```')\n  ) {\n    throw new Error(\n      `Architect returned Python source code instead of a ${fieldName} file path: ` +\n      scriptPath.slice(0, 300)\n    );\n  }\n\n  if (!pathSet.has(scriptPath)) {\n    // Auto-add to manifest as a recovery measure\n    manifest.push({\n      path: scriptPath,\n      purpose: fieldName + ' (auto-added by parser)',\n      depends_on: []\n    });\n    paths.push(scriptPath);\n    pathSet.add(scriptPath);\n  }\n\n  return scriptPath;\n}\n\nconst testScript        = validateScriptPath(effectiveTestScript,   'test_script');\nconst startupTestScript = validateScriptPath(effectiveStartupScript, 'startup_test_script');\n\nif (testScript === startupTestScript) {\n  throw new Error(\n    'test_script and startup_test_script must be different files.'\n  );\n}\n\n/*\n * Build order\n */\n\nlet buildOrder;\n\nif (Array.isArray(a.build_order) && a.build_order.length) {\n  buildOrder = a.build_order.map(norm).filter(Boolean);\n} else {\n  buildOrder = paths.slice();\n}\n\n// Remove duplicates\nbuildOrder = [...new Set(buildOrder)];\n\n// Remove unknown entries\nbuildOrder = buildOrder.filter(p => pathSet.has(p));\n\n// Add omitted manifest files\nfor (const p of paths) {\n  if (!buildOrder.includes(p)) {\n    buildOrder.push(p);\n  }\n}\n\n// Final sanity check\nif (\n  buildOrder.length !== paths.length ||\n  new Set(buildOrder).size !== paths.length\n) {\n  throw new Error('Unable to construct build_order from file_manifest.');\n}\n\n/*\n * Return architecture state\n */\n\nreturn [\n  {\n    json: {\n      ...base,\n\n      architecture:\n        String(a.architecture ?? ''),\n\n      architecture_contract:\n        a.architecture_contract,\n\n      file_manifest:\n        manifest,\n\n      build_order:\n        buildOrder,\n\n      remaining_files:\n        [...buildOrder],\n\n      generated_files:\n        [],\n\n      current_file:\n        null,\n\n      generated_source:\n        '',\n\n      dependency_context:\n        '',\n\n      external_dependencies:\n        [...externalDependencies],\n\n      repair_attempts:\n        0,\n\n      max_repairs:\n        3,\n\n      test_script:\n        testScript,\n\n      startup_test_script:\n        startupTestScript,\n\n      verification:\n        null,\n\n      test_result:\n        null,\n\n      startup_result:\n        null,\n\n      repair_history:\n        []\n    }\n  }\n];"
+      },
+      "id": "4b73a568-35ba-435d-b658-d1da21e6f616",
+      "name": "Parse Architecture1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6992,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s=$json; const q=Array.isArray(s.remaining_files)?[...s.remaining_files]:[]; if(!q.length) throw new Error('Build queue is empty.'); const path=q.shift(); const file=s.file_manifest.find(f=>f.path===path); if(!file) throw new Error('Missing manifest entry for '+path); const generated=Array.isArray(s.generated_files)?s.generated_files:[]; const depSet=new Set(file.depends_on||[]); const dependency_context=generated.filter(f=>depSet.has(f.path)).map(f=>'FILE: '+f.path+'\\n'+f.content).join('\\n\\n').slice(-30000); return [{json:{...s,remaining_files:q,current_file:file,generated_source:'',dependency_context}}];"
+      },
+      "id": "e5741199-2f06-4946-ba8e-8d5e472f0d2e",
+      "name": "Prepare Next File1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6768,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:11434/api/chat",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: 'deepseek-coder-v2:16b',\n  stream: false,\n  keep_alive: '10m',\n  options: { num_ctx: 16384, num_predict: 6000, temperature: 0.15, repeat_penalty: 1.15, repeat_last_n: 256 },\n  messages: [\n    {\n      role: 'system',\n      content: `You are the implementation engineer for a modular Python application.\n\nReturn ONLY valid JSON.\n\nThe JSON MUST contain exactly one key:\n\n{\n  \"content\": \"complete source code of the requested file\"\n}\n\nThe value of \"content\" MUST contain the complete source code.\nDo NOT return Markdown fences. Do NOT return explanations.\nDo NOT return additional JSON keys.\n\n==================================================\nTARGET FILE\n==================================================\n\nYou are generating exactly ONE file.\nThe target file is: ${$json.current_file?.path ?? ''}\nThe declared smoke-test file is: ${$json.test_script ?? ''}\nThe declared startup-test file is: ${$json.startup_test_script ?? ''}\n\n==================================================\nARCHITECTURE CONTRACT\n==================================================\n\nRead the architecture_contract carefully before writing any file.\nIt defines:\n- Which layer this file belongs to\n- Which imports are forbidden in this layer\n- The exact data schema for all shared config objects\n- All public interfaces this file must implement\n\nComply with the contract exactly. Do not invent APIs.\n\n==================================================\nFRAMEWORK IMPORT BOUNDARY\n==================================================\n\nThe architecture_contract specifies which modules belong\nto which layer.\n\nUI/rendering framework imports (pygame, tkinter, PyQt6, etc.)\nare ONLY allowed in modules the architecture_contract assigns\nto the rendering or UI layer.\n\nThey are FORBIDDEN in:\n- Core logic / simulation modules\n- Networking modules\n- Any module the contract assigns to a non-UI layer\n\nIf a function in a logic module needs input state\n(mouse position, key press, UI event), it MUST receive\nit as a parameter - never read it directly:\n\nCORRECT:\n  def build_tower(self, grid_pos, tower_type):\n\nWRONG:\n  def build_tower(self):\n      pos = pygame.mouse.get_pos()   # NEVER in logic modules\n\nNEVER call framework input methods inside logic modules.\n\n==================================================\nDATA SCHEMA COMPLIANCE\n==================================================\n\nAll shared configuration objects MUST match the schema\ndefined in the architecture_contract exactly.\n\nIf the contract defines a field as a list:\n  \"upgrade_cost\": [100, 200]    # CORRECT\n  \"upgrade_cost\": 100           # WRONG - must be a list\n\nIf the contract defines a field as a scalar:\n  \"base_cost\": 100              # CORRECT\n  \"base_cost\": [100]            # WRONG - must be a scalar\n\nRead the contract schema before writing constants or config.\n\n==================================================\nSTRICT PRODUCTION / TEST FILE BOUNDARY\n==================================================\n\nIf the target file is NOT a declared test file:\nGenerate PRODUCTION CODE ONLY.\nProduction files MUST NOT contain:\n- unittest.TestCase or test classes\n- pytest test functions\n- functions named test_*\n- smoke-test or startup-test code\n- test-only assertions\n\nIf the target file IS a declared test file:\nTest code is allowed.\nThe smoke test MUST terminate automatically and never\nstart an infinite loop, open a real window, or require\nnetwork/audio/input hardware.\nUse os.environ['SDL_VIDEODRIVER'] = 'dummy' etc. if needed.\n\n==================================================\nAPPLICATION RULES\n==================================================\n\nThe generated project must be a real runnable application.\nmain.py must start the real application, not a server stub.\nWrite real runnable code. Do not omit required interfaces.`\n    },\n    {\n      role: 'user',\n      content: JSON.stringify({\n        current_file: $json.current_file,\n        architecture: $json.architecture,\n        architecture_contract: $json.architecture_contract,\n        dependency_context: $json.dependency_context,\n        test_script: $json.test_script,\n        startup_test_script: $json.startup_test_script\n      })\n    }\n  ]\n}) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "4b8173e3-4846-4440-9e51-c202826f99ef",
+      "name": "Coder - Ollama1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -6544,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $node['Prepare Next File1'].json;\n\nlet raw = $json.body ?? $json.data ?? $json.response ?? $json;\n\nif (typeof raw === 'string') {\n  try { raw = JSON.parse(raw); } catch { /* bleibt String */ }\n}\n\n// Schritt 1: Ollama Response Envelope auspacken\nlet source =\n  raw?.message?.content ??\n  raw?.response ??\n  raw?.content ??\n  '';\n\nif (typeof source !== 'string') {\n  source = JSON.stringify(source ?? '');\n}\n\nsource = source.trim();\n\n// Schritt 2: Markdown-Fence-Präfix entfernen\n// Behandelt: \"json\\n{...\" \"```python\\n...\" \"```\\n...\"\nsource = source\n  .replace(/^(json|python|py|text)\\r?\\n/i, '')\n  .replace(/^```(?:json|python|py|text)?\\r?\\n?/i, '')\n  .replace(/\\r?\\n?```\\s*$/i, '')\n  .trim();\n\n// Schritt 3: JSON-Wrapper auspacken\n// Problem: Ollama liefert manchmal {\"content\": \"code mit\\nrohen Newlines\"}\n// -> Das ist kein valides JSON, aber der Content ist trotzdem brauchbar\nif (source.startsWith('{')) {\n\n  // Versuch 1: Valides JSON direkt parsen\n  try {\n    const parsed = JSON.parse(source);\n    const inner =\n      parsed?.content ??\n      parsed?.code ??\n      parsed?.response ??\n      parsed?.source ??\n      null;\n    if (typeof inner === 'string' && inner.trim().length > 10) {\n      source = inner.trim();\n    }\n  } catch {\n\n    // Versuch 2: Rohe Newlines im JSON-String escapen, dann nochmal parsen\n    try {\n      // Finde den \"content\"-Wert-Bereich und escape rohe Newlines darin\n      const fixedJson = source.replace(\n        /(\"(?:content|code|response|source)\"\\s*:\\s*\")([\\s\\S]*?)(\"(?:\\s*[,}]|$))/,\n        (_, prefix, value, suffix) => {\n          const escaped = value\n            .replace(/\\\\/g, '\\\\\\\\')\n            .replace(/\"/g, '\\\\\"')\n            .replace(/\\n/g, '\\\\n')\n            .replace(/\\r/g, '\\\\r')\n            .replace(/\\t/g, '\\\\t');\n          return prefix.replace(/\\\\\"/g, '\"') + escaped + suffix.replace(/\\\\\"/g, '\"');\n        }\n      );\n      const parsed2 = JSON.parse(fixedJson);\n      const inner2 =\n        parsed2?.content ??\n        parsed2?.code ??\n        parsed2?.response ??\n        null;\n      if (typeof inner2 === 'string' && inner2.trim().length > 10) {\n        source = inner2.trim();\n      }\n    } catch {\n\n      // Versuch 3: Regex-Extraktion – alles nach \"content\": \" bis EOF\n      // (für abgeschnittene Antworten ohne schließende })\n      const match = source.match(/\"(?:content|code|response|source)\"\\s*:\\s*\"([\\s\\S]+)/);\n      if (match) {\n        let extracted = match[1];\n        // Suche echtes schließendes \" (nicht escaped)\n        const endQuote = extracted.search(/(?<!\\\\)\"\\s*(?:[,}]|$)/);\n        if (endQuote > 0) {\n          extracted = extracted.slice(0, endQuote);\n        }\n        // JSON-Escape-Sequenzen auflösen\n        try {\n          source = JSON.parse('\"' + extracted.replace(/\"/g, '\\\\\"') + '\"');\n        } catch {\n          // Als letzten Ausweg: rohe Newlines wiederherstellen\n          source = extracted\n            .replace(/\\\\n/g, '\\n')\n            .replace(/\\\\t/g, '\\t')\n            .replace(/\\\\\"/g, '\"')\n            .replace(/\\\\\\\\/g, '\\\\');\n        }\n      }\n    }\n  }\n}\n\nsource = source.trim();\n\n// Schritt 4: Leerprüfung\nif (!source || source.length < 20) {\n  const preview = JSON.stringify(raw).slice(0, 400);\n  throw new Error(\n    'Coder returned empty or unusable source.\\nRaw preview: ' + preview\n  );\n}\n\n// Schritt 5: Stub-Erkennung\n// Modell hat nur Interface-Definitionen mit ... geliefert\nconst lines = source.split('\\n');\nconst codeLines = lines.filter(l => {\n  const t = l.trim();\n  return t.length > 0 && !t.startsWith('#');\n});\nconst stubLines = codeLines.filter(l =>\n  /^\\s*(def |class )\\S[^\\n]*:\\s*\\.\\.\\.\\s*$/.test(l)\n);\nconst stubRatio = codeLines.length > 0\n  ? stubLines.length / codeLines.length\n  : 0;\n\n// Als Stub werten wenn: >50% Stubs ODER weniger als 15 echte Code-Zeilen\n// und mindestens 2 Stubs vorhanden\nif (stubRatio > 0.5 || (stubLines.length >= 2 && codeLines.length < 15)) {\n  throw new Error(\n    'Coder returned stub-only output (' + stubLines.length + ' stubs / ' +\n    codeLines.length + ' code lines). ' +\n    'The model returned only method signatures without implementations. ' +\n    'File: ' + String(base.current_file?.path ?? 'unknown')\n  );\n}\n\nreturn [{\n  json: {\n    ...base,\n    generated_source: source\n  }\n}];"
+      },
+      "id": "17094131-5258-448b-a2d8-14bfc7d5bb9c",
+      "name": "Normalize Coder Output1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6368,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $json;\nconst source = String(s.generated_source ?? '');\nconst filePath = String(s.current_file?.path ?? '');\n\n// Nur Python-Dateien prüfen\nif (!filePath.endsWith('.py')) {\n  return [{ json: s }];\n}\n\nconst issues = [];\nconst lines = source.split('\\n');\n\nfor (let i = 0; i < lines.length; i++) {\n  const line = lines[i];\n  const trimmed = line.trim();\n\n  // Nur echte Encoding-Artefakte: \\n direkt nach : am Ende einer Code-Zeile\n  // z.B. \"for x in items:\\n    do()\" als ein Zeile mit literal \\n\n  // NICHT: print(\"hello\\nworld\") - \\n in String-Literal ist ok\n  //\n  // Heuristik: Zeile enthält \\n (zwei Zeichen: \\ + n) UND\n  // danach folgt Code-Einrückung (Leerzeichen + Keyword)\n  if (/:\\\\\\\\n\\s+\\S/.test(line) && !trimmed.startsWith('#') && !trimmed.startsWith('\"') && !trimmed.startsWith(\"'\")) {\n    issues.push({\n      line: i + 1,\n      text: line.slice(0, 120),\n      issue: 'Literal \\\\n nach : – JSON-Encoding-Artefakt (Newline fehlt)'\n    });\n  }\n\n  // Abgebrochene Zeile am Dateiende\n  if (i === lines.length - 1 && line.endsWith('\\\\') && lines.length > 1) {\n    issues.push({\n      line: i + 1,\n      text: line.slice(0, 120),\n      issue: 'Datei endet mit Backslash-Continuation – wahrscheinlich abgeschnitten'\n    });\n  }\n}\n\n// Stark unausgewogene Klammern als Abbruch-Signal\n// (nur wenn deutlich schief, nicht bei 1-2 Unterschied)\nconst opens  = (source.match(/[\\(\\[\\{]/g) || []).length;\nconst closes = (source.match(/[\\)\\]\\}]/g) || []).length;\nif (Math.abs(opens - closes) > 15) {\n  issues.push({\n    line: 0,\n    text: `opens=${opens} closes=${closes}`,\n    issue: 'Stark unausgewogene Klammern – Datei wahrscheinlich abgeschnitten'\n  });\n}\n\n// Datei zu kurz für echten Modulcode\nif (source.trim().length < 30 && !filePath.includes('__init__') && !filePath.includes('.json')) {\n  issues.push({\n    line: 0,\n    text: source.slice(0, 80),\n    issue: 'Datei zu kurz (' + source.length + ' Zeichen) – wahrscheinlich abgeschnitten'\n  });\n}\n\nif (issues.length > 0) {\n  const summary = issues.map(i =>\n    'Zeile ' + i.line + ': ' + i.issue + '\\n  → ' + i.text\n  ).join('\\n');\n  throw new Error(\n    'Syntax-Vorabprüfung fehlgeschlagen für ' + filePath + ':\\n' + summary + '\\n\\n' +\n    'Die Datei wird neu generiert.'\n  );\n}\n\nreturn [{ json: s }];"
+      },
+      "id": "736f5516-5b5c-48dc-a27d-c531e150cd1f",
+      "name": "Syntax Check1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6224,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s=$json; const path=String(s.current_file?.path??'').replace(/\\\\/g,'/').trim(); const source=String(s.generated_source??''); if(!path||!source.trim()) throw new Error('Missing path or source.'); if(path.startsWith('/')||/^[A-Za-z]:/.test(path)||path.split('/').includes('..')||path.includes('\\0')) throw new Error('Unsafe relative path: '+path); return [{json:{...s,validated_action:{action:'write_file',path,content:source}}}];"
+      },
+      "id": "48fd9c54-be6a-4fd5-a04d-ee2e43a194cc",
+      "name": "Validate Write Action1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6048,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8765/execute",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({action:'write_file',path:$json.validated_action.path,content:$json.validated_action.content}) }}",
+        "options": {
+          "response": {
+            "response": {}
+          },
+          "timeout": 180000
+        }
+      },
+      "id": "e65c1337-44cb-46a6-9445-a1f04b85ee82",
+      "name": "Write File via Bridge1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -5888,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s=$('Validate Write Action1').item.json; const raw=$json.body??$json.data??$json; let result=raw; if(typeof result==='string'){try{result=JSON.parse(result)}catch{result={ok:false,raw:result}}} if(result?.ok===false) throw new Error('Bridge refused file write: '+JSON.stringify(result)); return [{json:{...s,bridge_write:result}}];"
+      },
+      "id": "48e3800a-737a-4ed8-b4cc-c8a672855951",
+      "name": "Check Write Result1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -5664,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s=$json; const files=Array.isArray(s.generated_files)?[...s.generated_files]:[]; const entry={path:s.validated_action.path,content:s.validated_action.content,bridge_result:s.bridge_write}; const idx=files.findIndex(f=>f.path===entry.path); if(idx>=0) files[idx]=entry; else files.push(entry); return [{json:{...s,generated_files:files,last_write:{path:entry.path,ok:true}}}];"
+      },
+      "id": "7bde7d4a-fbc0-4837-a4b1-fe5d18d3243c",
+      "name": "Record Written File1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -5456,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.remaining_files.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "id": "7067316a-3837-4854-8aca-953e1b2de346"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8327e27d-0175-45b6-ba9e-fca1b19dbb95",
+      "name": "Files Remaining?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -5232,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s=$json; const files=Array.isArray(s.generated_files)?s.generated_files:[]; const project_context=files.map(f=>'FILE: '+f.path+'\\n'+f.content).join('\\n\\n').slice(-50000); return [{json:{...s,project_context}}];"
+      },
+      "id": "9bfccf1a-4090-4129-9c9b-53a9ebda2d83",
+      "name": "Aggregate Project Context1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -5088,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:11434/api/chat",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: 'qwen2.5-coder:7b',\n  stream: false,\n  keep_alive: '5m',\n  format: 'json',\n  options: { num_ctx: 32768, num_predict: 2048 },\n  messages: [\n    {\n      role: 'system',\n      content: `You are the QA lead for a multi-file Python application project.\n\nReturn ONLY valid JSON with exactly these keys:\n\n{\n  \"passed\": boolean,\n  \"summary\": \"string\",\n  \"errors\": [\"string\"],\n  \"repairs\": [\n    {\n      \"path\": \"relative/path.py\",\n      \"instruction\": \"precise repair instruction referencing the specific line or pattern\"\n    }\n  ]\n}\n\n==================================================\nEVIDENCE USE\n==================================================\n\nYou receive:\n- smoke_traceback: actual stderr from smoke test run\n- startup_traceback: actual stderr from startup test run\n- project source files\n- architecture_contract\n\nTRACEBACK ANALYSIS IS MANDATORY.\nFor every ERROR or FAILURE in the traceback:\n1. Read the exact file name and line number.\n2. Read the actual source at that location.\n3. Identify what is wrong at that specific line.\n4. Write a repair instruction referencing that line.\n\nNEVER diagnose by guessing. Use the traceback as primary evidence.\n\n==================================================\nLAYER BOUNDARY INSPECTION\n==================================================\n\nRead the architecture_contract to determine which modules\nbelong to which layer.\n\nCheck every file for layer violations:\n- UI framework calls (pygame.*, tkinter.*, etc.) in logic modules\n  are violations. The fix is NEVER \"add the import\" -\n  it is \"remove the call and accept the value as a parameter\".\n- Test framework code (unittest.TestCase, test_* functions)\n  in production files are violations.\n\n==================================================\nSCHEMA INSPECTION\n==================================================\n\nRead the architecture_contract for the data schema.\nCheck every config/constants file:\n- Fields defined as lists must be lists in the code.\n- Fields defined as scalars must be scalars in the code.\nA scalar where a list is expected is always a bug.\n\n==================================================\nEVALUATION\n==================================================\n\nEvaluate using BOTH test results.\nA passing smoke test does NOT prove the app starts correctly.\nA passing startup test is required for overall pass.\n\nIf the smoke test passes but the startup test fails: NOT passed.\nIf a test file itself is incorrect, target the test file for repair.\n\n==================================================\nFORBIDDEN REPAIR INSTRUCTIONS\n==================================================\n\nNEVER write:\n- \"Add import X\" when the real error is that X should not\n  be called in that module at all (layer violation).\n- Any instruction where the before and after text would be identical.\n- Any instruction that does not reference a specific problem\n  in the actual source code.\n- Vague instructions like \"fix the imports\" without specifying what.\n\nReturn ONLY the JSON object.`\n    },\n    {\n      role: 'user',\n      content: JSON.stringify({\n        architecture_contract: $json.architecture_contract,\n        project: $json.project_context,\n        smoke_traceback: $json.test_result?.smoke_result?.stderr ?? '',\n        startup_traceback: $json.test_result?.startup_result?.stderr ?? '',\n        test_result: $json.test_result,\n        startup_result: $json.startup_result ?? null\n      })\n    }\n  ]\n}) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "b41565af-629e-441c-96ef-04c36d180a4f",
+      "name": "Verifier - Ollama1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -4784,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base=$node['Prepare Verifier Input1'].json; let raw=$json.body??$json.data??$json.response??$json; if(typeof raw==='string') raw=JSON.parse(raw); let c=raw?.message?.content??raw?.content??raw; if(typeof c!=='string') c=JSON.stringify(c); c=c.trim().replace(/^```json\\s*/i,'').replace(/\\s*```$/i,'').trim(); const v=JSON.parse(c); if(typeof v.passed!=='boolean') throw new Error('Verifier returned no passed boolean.'); if(!Array.isArray(v.errors)||!Array.isArray(v.repairs)) throw new Error('Verifier response schema invalid.'); return [{json:{...base,verification:v}}];"
+      },
+      "id": "f33e6db6-60f7-4d51-8444-b9609c2dbbc3",
+      "name": "Parse Verification1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4576,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8765/execute",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  action: 'test_project',\n  test_script: $json.test_script,\n  startup_test_script: $json.startup_test_script,\n  timeout_seconds: 120\n}) }}",
+        "options": {
+          "response": {
+            "response": {}
+          },
+          "timeout": 180000
+        }
+      },
+      "id": "1b354742-1c6a-4aa0-912b-bf08e0960fe2",
+      "name": "Run Tests via Bridge1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -5136,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $node['Prepare Test Input1'].json;\nconst raw = $json.body ?? $json.data ?? $json;\nlet result = raw;\nif (typeof result === 'string') {\n  try { result = JSON.parse(result); } catch { result = { ok: false, raw: result }; }\n}\n\n// If compilation failed, synthesize a smoke_result with the compile error\n// so downstream nodes (Verifier, Repair Analyst) see the traceback correctly\nif (result?.stage === 'compile' && result?.compile?.ok === false) {\n  const compileErr = String(result.compile?.stderr ?? 'Compilation failed');\n  result = {\n    ...result,\n    ok: false,\n    smoke_result: {\n      ok: false,\n      stderr: 'COMPILE ERROR (before tests could run):\\n' + compileErr,\n      stdout: '',\n      exit_code: result.compile?.exit_code ?? 1\n    },\n    startup_result: {\n      ok: false,\n      stderr: 'Skipped: compilation failed',\n      stdout: '',\n      exit_code: 1\n    }\n  };\n}\n\nreturn [{ json: { ...base, test_result: result } }];"
+      },
+      "id": "0b2d03a8-ed81-4e42-ba26-b9a9fa7b3724",
+      "name": "Parse Test Result1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4768,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.verification.passed && $json.test_result?.ok === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "id": "25872723-42cb-45c0-8635-c9b6017e6d67"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "216fc637-0fe4-4eb0-b348-d4db09ae4b11",
+      "name": "Quality Gate1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -4352,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json:{ok:true,status:'VERIFIED',workspace_path:$json.workspace_path,files:($json.generated_files??[]).map(f=>f.path),test_result:$json.test_result,verification:$json.verification,repair_attempts:$json.repair_attempts}}];"
+      },
+      "id": "e9bc1d8b-78e2-4942-bf66-80294f8e54f9",
+      "name": "Success Report1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4128,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $json;\n\nconst next = Number(s.repair_attempts ?? 0) + 1;\n\nconst repairs = Array.isArray(s.verification?.repairs)\n  ? s.verification.repairs.filter(r => r && r.path)\n  : [];\n\nconst max = Number(s.max_repairs ?? 3);\n\nif (!repairs.length || next > max) {\n  return [{\n    json: {\n      ...s,\n      repair_allowed: false,\n      repair_exhausted: true,\n      repair_error: !repairs.length\n        ? 'Verifier supplied no actionable repair.'\n        : 'Repair budget exhausted.'\n    }\n  }];\n}\n\nconst history = Array.isArray(s.repair_history)\n  ? s.repair_history\n  : [];\n\n// Verifier path is only a HINT - Repair Analyst determines real target\nconst verifierRepair = repairs.find(\n  r => !history.includes(String(r.path))\n) ?? repairs[0];\n\nconst verifierPath = String(verifierRepair.path)\n  .replace(/\\\\/g, '/')\n  .replace(/^\\.\\//, '')\n  .trim();\n\nconst generated = Array.isArray(s.generated_files)\n  ? s.generated_files\n  : [];\n\nconst manifest = Array.isArray(s.file_manifest)\n  ? s.file_manifest\n  : [];\n\n// Build repair context: include verifier target + smoke test + dependencies\nconst contextFiles = [];\nconst seen = new Set();\n\nfunction addContext(filePath, reason) {\n  if (!filePath || seen.has(filePath)) return;\n  const normalized = String(filePath)\n    .replace(/\\\\/g, '/')\n    .replace(/^\\.\\//, '')\n    .trim();\n  const file = generated.find(f => f.path === normalized);\n  if (!file) return;\n  seen.add(normalized);\n  contextFiles.push({\n    path: file.path,\n    reason,\n    content: String(file.content ?? '')\n  });\n}\n\naddContext(verifierPath, 'verifier suggested target');\n\nconst testScript = String(s.test_script ?? '')\n  .replace(/\\\\/g, '/').replace(/^\\.\\//, '').trim();\nif (testScript) addContext(testScript, 'smoke test');\n\nconst startupScript = String(s.startup_test_script ?? '')\n  .replace(/\\\\/g, '/').replace(/^\\.\\//, '').trim();\nif (startupScript) addContext(startupScript, 'startup test');\n\n// Add manifest dependencies of verifier-suggested file\nconst verifierManifest = manifest.find(f => f.path === verifierPath);\nif (verifierManifest && Array.isArray(verifierManifest.depends_on)) {\n  for (const dep of verifierManifest.depends_on) {\n    addContext(dep, 'dependency of suggested target');\n  }\n}\n\n// Extract tracebacks from test_result\nconst smokeTraceback = String(\n  s.test_result?.smoke_result?.stderr ?? ''\n);\nconst startupTraceback = String(\n  s.test_result?.startup_result?.stderr ?? ''\n);\n\nreturn [{\n  json: {\n    ...s,\n    repair_attempts: next,\n    repair_allowed: true,\n    repair_exhausted: false,\n    repair_context: contextFiles,\n    repair_architecture_contract: s.architecture_contract ?? '',\n    repair_history: [...history, verifierPath],\n    // Inject tracebacks so Repair Analyst has them directly\n    'test_result': {\n      ...(s.test_result ?? {}),\n      smoke_result: {\n        ...(s.test_result?.smoke_result ?? {}),\n        stderr: smokeTraceback\n      },\n      startup_result: {\n        ...(s.test_result?.startup_result ?? {}),\n        stderr: startupTraceback\n      }\n    }\n  }\n}];"
+      },
+      "id": "0b563924-3b07-422c-ba17-8dcd3ef8a4f3",
+      "name": "Prepare Repair1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4128,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.repair_allowed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "id": "1ba9828b-f1b6-4469-82af-b046373fe8f1"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8226bf87-8063-4b27-8cf8-e02844b7e4ae",
+      "name": "Repair Allowed?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -3968,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:11434/api/chat",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: 'deepseek-coder-v2:16b',\n  stream: false,\n  keep_alive: '10m',\n  options: { num_ctx: 16384, num_predict: 6000, temperature: 0.15, repeat_penalty: 1.15, repeat_last_n: 256 },\n  messages: [\n    {\n      role: 'system',\n      content: `You are the repair coder for a multi-file Python application project.\n\nReturn ONLY the complete corrected source code for the selected target file.\nNo Markdown. No explanations. No code fences.\n\nA repair analyst has already identified the root cause and target file.\nFollow the analyst's instruction exactly.\n\nIMPORTANT:\n- Fix the actual root cause, not a symptom.\n- Preserve the existing architecture and unrelated behavior.\n- Do not invent APIs that do not exist in other files.\n- Do not modify other files.\n- Keep imports valid and layered per the architecture_contract.\n- Keep public interfaces compatible unless the repair instruction\n  explicitly requires otherwise.\n- Return the ENTIRE corrected target file.\n\nLAYER BOUNDARY (read the architecture_contract):\n- If the target is a logic/simulation module:\n  Remove any UI framework calls. Accept values as parameters instead.\n  Do NOT add pygame, tkinter, or other UI framework imports.\n- If the target is a UI/rendering module:\n  UI framework imports are allowed.\n- If the target is the smoke test:\n  Fix the test to validate real existing public behavior.\n  Do not create fake replacement classes.\n  Do not require a real display, audio, or network in smoke tests.\n\nDATA SCHEMA (read the architecture_contract):\n- If fixing a constants/config file:\n  Fields defined as lists must be lists.\n  Fields defined as scalars must be scalars.\n  Match the schema exactly.\n\nThe target file is the ONLY file that will be written.`\n    },\n    {\n      role: 'user',\n      content: JSON.stringify({\n        target_file: $json.repair_target,\n        root_cause: $json.repair_root_cause,\n        repair_instruction: $json.repair_instruction,\n        confidence: $json.repair_confidence,\n        target_source: $json.repair_source,\n        repair_context: $json.repair_context,\n        architecture_contract: $json.repair_architecture_contract ?? $json.architecture_contract ?? ''\n      })\n    }\n  ]\n}) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "652ae445-11af-4bdd-a1a8-0b8e6219b107",
+      "name": "Repair Coder - Ollama1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3296,
+        944
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $('Parse Repair Analysis1').item.json;\n\nlet raw = $json.body ?? $json.data ?? $json;\n\nif (typeof raw === 'string') {\n  try { raw = JSON.parse(raw); } catch { /* bleibt String */ }\n}\n\nlet source =\n  raw?.message?.content ??\n  raw?.response ??\n  raw?.content ??\n  '';\n\nif (typeof source !== 'string') {\n  source = JSON.stringify(source ?? '');\n}\n\n// Fallback JSON-Wrapper\nconst trimmed = source.trim();\nif (trimmed.startsWith('{')) {\n  try {\n    const parsed = JSON.parse(trimmed);\n    if (typeof parsed?.content === 'string') source = parsed.content;\n    else if (typeof parsed?.code === 'string') source = parsed.code;\n    else if (typeof parsed?.response === 'string') source = parsed.response;\n  } catch { /* kein JSON */ }\n}\n\n// Markdown entfernen\nsource = source\n  .trim()\n  .replace(/^```(?:python|py|text)?\\r?\\n?/i, '')\n  .replace(/\\r?\\n?```$/i, '')\n  .trim();\n\n// Truncation Recovery\nif (!source || source.length < 20) {\n  const raw_str = typeof raw === 'string' ? raw : JSON.stringify(raw ?? '');\n  const match = raw_str.match(/\"(?:content|code|response)\"\\s*:\\s*\"([\\s\\S]+)/);\n  if (match) {\n    let extracted = match[1];\n    const endQuote = extracted.search(/(?<!\\\\)\"/);\n    if (endQuote > 0) extracted = extracted.slice(0, endQuote);\n    try { source = JSON.parse('\"' + extracted + '\"'); }\n    catch { source = extracted; }\n  }\n}\n\nif (!source || source.trim().length < 10) {\n  const preview = JSON.stringify(raw).slice(0, 400);\n  throw new Error(\n    'Repair Coder returned empty or unusable source.\\nRaw preview: ' + preview\n  );\n}\n\nreturn [{\n  json: {\n    ...s,\n    repair_source: source.trim()\n  }\n}];"
+      },
+      "id": "088bc7c1-e4ad-404e-883a-2ae64e8247b9",
+      "name": "Normalize Repair1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3088,
+        944
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8765/execute",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  action: 'write_file',\n  path: $json.repair_target,\n  content: $json.repair_source\n}) }}",
+        "options": {
+          "response": {
+            "response": {}
+          },
+          "timeout": 180000
+        }
+      },
+      "id": "2391176d-4532-4bc1-8562-97134c9b4367",
+      "name": "Execute Repair via Bridge1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2896,
+        944
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s=$node['Normalize Repair1'].json; const raw=$json.body??$json.data??$json; let bridge=raw; if(typeof bridge==='string'){try{bridge=JSON.parse(bridge)}catch{bridge={ok:false,raw:bridge}}} if(bridge?.ok===false) throw new Error('Bridge refused repair write: '+JSON.stringify(bridge)); const files=(s.generated_files??[]).map(f=>f.path===(s.repair_target??s.current_file?.path)?{...f,content:s.repair_source,bridge_result:bridge}:f); return [{json:{...s,generated_files:files,last_write:{path:(s.repair_target??s.current_file?.path),ok:true}}}];"
+      },
+      "id": "df005e4f-3220-40aa-9e4b-ea1d6ae50da5",
+      "name": "Record Repair1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2672,
+        944
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json:{ok:false,status:'FAILED',workspace_path:$json.workspace_path,user_request:$json.user_request??'',files:($json.generated_files??[]).map(f=>f.path),test_result:$json.test_result,verification:$json.verification,repair_attempts:$json.repair_attempts,error:$json.repair_error??'Repair budget exhausted or no valid repair was produced.'}}];"
+      },
+      "id": "30a2bac4-684b-409f-bbac-78c23c229bd7",
+      "name": "Failure Report1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3648,
+        1232
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s=$json; return [{json:{...s}}];"
+      },
+      "id": "2ac4fee6-b211-4fb7-afa2-6ead035ba8b5",
+      "name": "Prepare Verifier Input1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4608,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $json;\n\nconst testScript = String(\n  s.test_script ?? 'tests/smoke_test.py'\n).trim();\n\nconst startupTestScript = String(\n  s.startup_test_script ?? 'tests/startup_test.py'\n).trim();\n\nif (!testScript) {\n  throw new Error('Missing test_script.');\n}\n\nif (!startupTestScript) {\n  throw new Error('Missing startup_test_script.');\n}\n\nif (testScript === startupTestScript) {\n  throw new Error(\n    'test_script and startup_test_script must be different files.'\n  );\n}\n\nreturn [\n  {\n    json: {\n      ...s,\n\n      test_script: testScript,\n\n      startup_test_script: startupTestScript,\n\n      test_input: {\n        action: 'test_project',\n        test_script: testScript,\n        startup_test_script: startupTestScript,\n        timeout_seconds: 120\n      }\n    }\n  }\n];"
+      },
+      "id": "cf3bdfd9-fe58-4c0f-a1d0-056a85422339",
+      "name": "Prepare Test Input1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3952,
+        1232
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:11434/api/chat",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: 'gpt-oss:20b',\n  stream: false,\n  keep_alive: '5m',\n  format: 'json',\n  options: { num_ctx: 16384, num_predict: 4096, temperature: 0.1, repeat_penalty: 1.1 },\n  messages: [\n    {\n      role: 'system',\n      content: `You are the root-cause repair analyst for a multi-file Python application.\n\nYour job is NOT to write code.\nYour job is to determine the ACTUAL root cause of a failure\nand select the correct file that must be repaired.\n\nThe verifier's suggested repair path is ONLY A HYPOTHESIS.\nIt may be wrong. NEVER blindly follow the verifier's path.\n\nReturn ONLY valid JSON with exactly these keys:\n\n{\n  \"target_file\": \"relative/path.py\",\n  \"root_cause\": \"precise description of the actual root cause\",\n  \"repair_instruction\": \"precise instruction for the repair coder\",\n  \"confidence\": \"high|medium|low\",\n  \"affected_files\": [\"relative/path.py\"]\n}\n\n==================================================\nEVIDENCE PRIORITY\n==================================================\n\nUse evidence in this order:\n\n1. smoke_traceback: actual Python traceback from smoke test\n2. startup_traceback: actual Python traceback from startup test\n3. Actual source code in project_files\n4. architecture_contract (layer boundaries, schema)\n5. Interfaces between affected files\n6. Verifier interpretation\n7. Verifier suggested repair path (LOWEST authority)\n\nThe tracebacks have the HIGHEST authority.\nRead them FIRST.\n\n==================================================\nTRACEBACK ROOT-CAUSE ANALYSIS\n==================================================\n\nAlways inspect the exact file and line from the traceback.\n\nLAYER VIOLATION EXAMPLE:\n  File \"game_state.py\", line 72, in build_tower\n    mouse_pos = pygame.mouse.get_pos()\n  NameError: name 'pygame' is not defined\n\nCorrect interpretation:\n  game_state.py calls a UI framework function without importing it.\n  This is a layer violation: UI calls belong in the UI layer.\n\nCorrect repair target: game_state.py\nCorrect instruction: Remove the pygame.mouse.get_pos() call.\n  Refactor build_tower to accept position as a parameter instead.\n\nWRONG repair: \"Add import pygame to game_state.py\"\n  (This would fix the NameError but create a layer violation.)\n\nTYPE ERROR EXAMPLE:\n  File \"entities.py\", line 36, in upgrade\n    self.range = constants.tower_types[self.type]['upgrade_range'][self.upgrade_level]\n  TypeError: 'int' object is not subscriptable\n\nCorrect interpretation:\n  upgrade_range is defined as a scalar int in constants.py\n  but the code treats it as a list.\n\nCheck the architecture_contract schema:\n  If the contract says upgrade_range is a list: fix constants.py\n  If the contract says upgrade_range is a scalar: fix entities.py\n\n==================================================\nSTRICT PRODUCTION / TEST SEPARATION\n==================================================\n\nThe declared smoke-test file is: ${$json.test_script ?? ''}\n\nProduction files MUST NOT contain test framework code.\nIf a production file contains unittest.TestCase or test_* functions,\nthat production file is the repair target.\nThe fix is to remove the misplaced test code while preserving\nthe real production implementation.\n\nDo NOT solve this by adding test framework imports to production code.\n\n==================================================\nREPAIR INSTRUCTION QUALITY\n==================================================\n\nThe instruction MUST:\n- Reference the specific file and line or pattern causing the error\n- State exactly what to change and why\n- Distinguish between removing wrong code vs adding missing code\n- Be actionable by a coder who has not seen the traceback\n\nReturn ONLY the JSON object.`\n    },\n    {\n      role: 'user',\n      content: JSON.stringify({\n        smoke_traceback: $json.test_result?.smoke_result?.stderr ?? '',\n        startup_traceback: $json.test_result?.startup_result?.stderr ?? '',\n        verifier_suggestion: $json.verification?.repairs ?? [],\n        project_files: $json.repair_context,\n        architecture_contract: $json.repair_architecture_contract ?? $json.architecture_contract ?? '',\n        test_script: $json.test_script ?? ''\n      })\n    }\n  ]\n}) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -3696,
+        944
+      ],
+      "id": "bf8595d4-6651-4a58-9dbf-2abc68b45a54",
+      "name": "Repair Analyst - Ollama1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $('Prepare Repair1').item.json;\n\nlet raw =\n  $json.body ??\n  $json.data ??\n  $json;\n\nif (typeof raw === 'string') {\n  try { raw = JSON.parse(raw); } catch { /* bleibt String */ }\n}\n\nlet content =\n  raw?.message?.content ??\n  raw?.content ??\n  '';\n\nif (typeof content !== 'string') {\n  content = JSON.stringify(content ?? raw);\n}\n\ncontent = content\n  .trim()\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\n// ─── JSON-Reparatur bei abgeschnittenem Output ────────────────────────────\n// eval_count == num_predict → Modell wurde hart abgeschnitten\n// Versuche das JSON zu vervollständigen bevor wir parsen\nfunction repairTruncatedJson(text) {\n  // Schritt 1: direkt parsen\n  try {\n    return JSON.parse(text);\n  } catch { /* weiter */ }\n\n  // Schritt 2: offene Strings schließen und dann parsen\n  try {\n    let t = text.trimEnd();\n    // Anzahl nicht-escapter \" zählen\n    const quoteCount = (t.match(/(?<!\\\\)\"/g) || []).length;\n    if (quoteCount % 2 !== 0) {\n      t = t + '\"'; // offenen String schließen\n    }\n    // Offene Objekte/Arrays schließen\n    const opens = [];\n    let inString = false;\n    for (let i = 0; i < t.length; i++) {\n      const c = t[i];\n      const prev = t[i - 1];\n      if (c === '\"' && prev !== '\\\\') inString = !inString;\n      if (!inString) {\n        if (c === '{') opens.push('}');\n        else if (c === '[') opens.push(']');\n        else if (c === '}' || c === ']') opens.pop();\n      }\n    }\n    // Trailing Komma entfernen, dann schließen\n    t = t.replace(/,\\s*$/, '');\n    t = t + opens.reverse().join('');\n    return JSON.parse(t);\n  } catch { /* weiter */ }\n\n  // Schritt 3: Einzelne Felder per Regex extrahieren\n  // Für den Fall dass das JSON zu kaputt ist\n  const fields = {};\n  const patterns = {\n    target_file:      /\"target_file\"\\s*:\\s*\"([^\"]+)\"/,\n    root_cause:       /\"root_cause\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"/,\n    repair_instruction: /\"repair_instruction\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"/,\n    confidence:       /\"confidence\"\\s*:\\s*\"(high|medium|low)\"/,\n  };\n  for (const [key, pattern] of Object.entries(patterns)) {\n    const m = text.match(pattern);\n    if (m) fields[key] = m[1].replace(/\\\\n/g, '\\n').replace(/\\\\\"/g, '\"');\n  }\n  if (fields.target_file && fields.repair_instruction) {\n    fields.confidence = fields.confidence ?? 'low';\n    fields.root_cause = fields.root_cause ?? 'Could not extract root_cause (truncated response)';\n    fields.affected_files = [];\n    return fields;\n  }\n\n  throw new Error(\n    'Could not parse or repair Analyst JSON. ' +\n    'Content preview: ' + text.slice(0, 200)\n  );\n}\n\nconst analysis = repairTruncatedJson(content);\n\nif (\n  !analysis ||\n  typeof analysis !== 'object' ||\n  Array.isArray(analysis)\n) {\n  throw new Error('Repair Analyst did not return an object.');\n}\n\n// ─── target_file validieren ───────────────────────────────────────────────\nconst target = String(analysis.target_file ?? '')\n  .replace(/\\\\/g, '/')\n  .replace(/^\\.\\//, '')\n  .trim();\n\nif (!target) {\n  throw new Error('Repair Analyst returned no target_file.');\n}\n\nif (\n  target.startsWith('/') ||\n  /^[A-Za-z]:/.test(target) ||\n  target.split('/').includes('..') ||\n  target.includes('\\0')\n) {\n  throw new Error('Repair Analyst returned unsafe target_file: ' + target);\n}\n\nconst generated =\n  Array.isArray(s.generated_files)\n    ? s.generated_files\n    : [];\n\nconst targetFile = generated.find(f => f.path === target);\n\nif (!targetFile) {\n  // Fallback: Verifier-Suggestion verwenden wenn Analyst-Datei nicht gefunden\n  const fallbackPath = String(\n    s.verification?.repairs?.[0]?.path ?? ''\n  ).replace(/\\\\/g, '/').replace(/^\\.\\//, '').trim();\n  const fallbackFile = fallbackPath\n    ? generated.find(f => f.path === fallbackPath)\n    : null;\n\n  if (fallbackFile) {\n    // Weiter mit Fallback\n    return [{\n      json: {\n        ...s,\n        current_file: { path: fallbackFile.path, purpose: 'repair', depends_on: [] },\n        repair_source: fallbackFile.content,\n        repair_target: fallbackFile.path,\n        repair_architecture_contract: s.architecture_contract ?? '',\n        repair_root_cause: String(analysis.root_cause ?? 'Unknown - analyst response truncated'),\n        repair_affected_files: [],\n        repair_instruction: String(analysis.repair_instruction ?? s.verification?.repairs?.[0]?.instruction ?? ''),\n        repair_confidence: 'low'\n      }\n    }];\n  }\n\n  throw new Error('Repair Analyst selected unknown file: ' + target);\n}\n\n// ─── Restliche Felder extrahieren ─────────────────────────────────────────\nconst affectedFiles = Array.isArray(analysis.affected_files)\n  ? analysis.affected_files\n      .map(p => String(p).replace(/\\\\/g, '/').replace(/^\\.\\//, '').trim())\n      .filter(Boolean)\n  : [];\n\nconst normalizedAffected = [\n  ...new Set(affectedFiles.filter(p => generated.some(f => f.path === p)))\n];\n\nconst confidence = String(analysis.confidence ?? 'low').toLowerCase();\n\nconst instruction = String(analysis.repair_instruction ?? '').trim();\n\nif (!instruction) {\n  throw new Error('Repair Analyst returned no repair_instruction.');\n}\n\nreturn [{\n  json: {\n    ...s,\n\n    current_file: {\n      path: target,\n      purpose: 'repair',\n      depends_on: []\n    },\n\n    repair_source:\n      targetFile.content,\n\n    repair_target:\n      target,\n\n    repair_architecture_contract:\n      s.architecture_contract ?? '',\n\n    repair_root_cause:\n      String(analysis.root_cause ?? ''),\n\n    repair_affected_files:\n      normalizedAffected,\n\n    repair_instruction:\n      instruction,\n\n    repair_confidence:\n      ['high', 'medium', 'low'].includes(confidence)\n        ? confidence\n        : 'low'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3504,
+        944
+      ],
+      "id": "d4bcc497-f9a0-4200-84de-4a1baaba8b88",
+      "name": "Parse Repair Analysis1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $json;\n\n// State-Transfer: Failure Report1 → Scan Project\n// Scan Project liest user_request aus chatInput/text/message\n// und baut den Scanner-State neu auf.\n// Wir reichen user_request durch und setzen alle Loop-Felder zurück.\n\nconst user_request = String(\n  s.user_request ?? s.chatInput ?? s.text ?? s.message ?? ''\n).trim();\n\nif (!user_request) {\n  throw new Error(\n    'Repair instructor: user_request fehlt im Failure-Report-Output. ' +\n    'Failure Report1 muss user_request weiterreichen.'\n  );\n}\n\nreturn [{json:{\n  // Scan Project liest eines dieser Felder als user_request\n  chatInput:           user_request,\n  // Kontext für den LGDC-Scan-Loop\n  workspace_path:      String(s.workspace_path ?? 'G:/company'),\n  // Reparatur-History aus dem vorherigen Lauf mitgeben\n  // (wird von Scan Project weitergereicht falls benötigt)\n  prior_repair_attempts: Number(s.repair_attempts ?? 0),\n  prior_errors:        s.error ?? '',\n  prior_test_result:   s.test_result ?? null,\n  // Explizit kein analysis_done, keine repair_plan etc. –\n  // Scan Project setzt alles frisch auf\n}}];"
+      },
+      "id": "0ba72510-e2cd-4e63-950f-c31c2502acdc",
+      "name": "Repair instructor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3424,
+        1616
+      ],
+      "alwaysOutputData": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Chat Trigger": {
+      "main": [
+        [
+          {
+            "node": "Project Settings1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan Project": {
+      "main": [
+        [
+          {
+            "node": "Write Scanner Script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Initial Tests": {
+      "main": [
+        [
+          {
+            "node": "Parse Initial Test Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Initial Test Result": {
+      "main": [
+        [
+          {
+            "node": "Analyst - Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyst - Ollama": {
+      "main": [
+        [
+          {
+            "node": "Parse Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Analysis": {
+      "main": [
+        [
+          {
+            "node": "Repairs Remaining?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Repairs Remaining?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Next Repair",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Run Final Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Next Repair": {
+      "main": [
+        [
+          {
+            "node": "Repair Coder - Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Repair Coder - Ollama": {
+      "main": [
+        [
+          {
+            "node": "Normalize Repair Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Repair Output": {
+      "main": [
+        [
+          {
+            "node": "Validate Repair Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Repair via Bridge": {
+      "main": [
+        [
+          {
+            "node": "Record Repair Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Repair Result": {
+      "main": [
+        [
+          {
+            "node": "Repairs Remaining?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Final Tests": {
+      "main": [
+        [
+          {
+            "node": "Parse Final Test Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Final Test Result": {
+      "main": [
+        [
+          {
+            "node": "Final Verifier - Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Verifier - Ollama": {
+      "main": [
+        [
+          {
+            "node": "Parse Final Verification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Final Verification": {
+      "main": [
+        [
+          {
+            "node": "Final Quality Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Quality Gate": {
+      "main": [
+        [
+          {
+            "node": "Success Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Scanner Script": {
+      "main": [
+        [
+          {
+            "node": "Write Startup Dummy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Startup Dummy": {
+      "main": [
+        [
+          {
+            "node": "Run Scanner via Bridge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Scanner via Bridge": {
+      "main": [
+        [
+          {
+            "node": "Parse Project Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Project Files": {
+      "main": [
+        [
+          {
+            "node": "Run Initial Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Repair Payload": {
+      "main": [
+        [
+          {
+            "node": "Write Repair via Bridge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Project Settings1": {
+      "main": [
+        [
+          {
+            "node": "Architect - Ollama1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Architect - Ollama1": {
+      "main": [
+        [
+          {
+            "node": "Parse Architecture1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Architecture1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Next File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Next File1": {
+      "main": [
+        [
+          {
+            "node": "Coder - Ollama1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Coder - Ollama1": {
+      "main": [
+        [
+          {
+            "node": "Normalize Coder Output1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Coder Output1": {
+      "main": [
+        [
+          {
+            "node": "Syntax Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Write Action1": {
+      "main": [
+        [
+          {
+            "node": "Write File via Bridge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write File via Bridge1": {
+      "main": [
+        [
+          {
+            "node": "Check Write Result1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Write Result1": {
+      "main": [
+        [
+          {
+            "node": "Record Written File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Written File1": {
+      "main": [
+        [
+          {
+            "node": "Files Remaining?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Files Remaining?1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Next File1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aggregate Project Context1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Project Context1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Test Input1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verifier - Ollama1": {
+      "main": [
+        [
+          {
+            "node": "Parse Verification1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Verification1": {
+      "main": [
+        [
+          {
+            "node": "Quality Gate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Tests via Bridge1": {
+      "main": [
+        [
+          {
+            "node": "Parse Test Result1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Test Result1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Verifier Input1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quality Gate1": {
+      "main": [
+        [
+          {
+            "node": "Success Report1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Repair1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Repair1": {
+      "main": [
+        [
+          {
+            "node": "Repair Allowed?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Repair Allowed?1": {
+      "main": [
+        [
+          {
+            "node": "Repair Analyst - Ollama1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Report1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Repair Coder - Ollama1": {
+      "main": [
+        [
+          {
+            "node": "Normalize Repair1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Repair1": {
+      "main": [
+        [
+          {
+            "node": "Execute Repair via Bridge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Repair via Bridge1": {
+      "main": [
+        [
+          {
+            "node": "Record Repair1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Repair1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Test Input1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Verifier Input1": {
+      "main": [
+        [
+          {
+            "node": "Verifier - Ollama1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Test Input1": {
+      "main": [
+        [
+          {
+            "node": "Run Tests via Bridge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Repair Analyst - Ollama1": {
+      "main": [
+        [
+          {
+            "node": "Parse Repair Analysis1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Repair Analysis1": {
+      "main": [
+        [
+          {
+            "node": "Repair Coder - Ollama1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Syntax Check1": {
+      "main": [
+        [
+          {
+            "node": "Validate Write Action1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Failure Report1": {
+      "main": [
+        [
+          {
+            "node": "Repair instructor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Repair instructor": {
+      "main": [
+        [
+          {
+            "node": "Scan Project",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "6b3aa4de-85aa-4e96-9617-be3cd191b722",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "902c49aca0b92e57d111d05bc798c72b648dc62e84ec6b2fa04eb26b859ff11c"
+  },
+  "nodeGroups": [],
+  "id": "LgGRDHagQsRAQQC6",
+  "tags": []
+}
