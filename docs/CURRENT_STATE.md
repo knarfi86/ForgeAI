@@ -428,20 +428,36 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Aktuell geänderte Dateien
 
-- `.gitignore`
-- `forgeai/ai/ollama_client.py`
-- `forgeai/core/project_analyzer.py.bak`
-- `forgeai/core/project_analyzer.py.before_package_link.bak`
-- `forgeai/core/workspace_manager.py`
+- `forgeai/ai/agent_orchestrator.py`
+- `forgeai/ai/agent_state.py`
 - `forgeai/ui/main_window.py`
-- `path/to/filename.js`
-- `tests/test_ollama_client.py`
-- `tests/test_workspace_manager.py`
-- `"\342\224\224\342\224\200\342\224\200 README.md"`
+- `tests/test_agent_recovery_ui.py`
+- `ForgeAI_CoreFoundation_Update.zip`
+- `ForgeAI_CoreFoundation_Update/INSTALL.cmd`
+- `ForgeAI_CoreFoundation_Update/INSTALL.ps1`
+- `ForgeAI_CoreFoundation_Update/LIESMICH.txt`
+- `ForgeAI_CoreFoundation_Update/PRUEFUNG.txt`
+- `ForgeAI_CoreFoundation_Update/changes.patch`
+- `ForgeAI_CoreFoundation_Update/install.py`
+- `ForgeAI_CoreFoundation_Update/manifest.json`
+- `ForgeAI_CoreFoundation_Update/payload/ARCHITECTURE.md`
+- `ForgeAI_CoreFoundation_Update/payload/docs/CURRENT_STATE.md`
+- `ForgeAI_CoreFoundation_Update/payload/docs/RECOVERY_FOUNDATION.md`
+- `ForgeAI_CoreFoundation_Update/payload/forgeai/ai/agent_orchestrator.py`
+- `ForgeAI_CoreFoundation_Update/payload/forgeai/ai/agent_state.py`
+- `ForgeAI_CoreFoundation_Update/payload/forgeai/core/failure_fingerprint.py`
+- `ForgeAI_CoreFoundation_Update/payload/forgeai/ui/main_window.py`
+- `ForgeAI_CoreFoundation_Update/payload/tests/test_agent_recovery_ui.py`
+- `ForgeAI_CoreFoundation_Update/payload/tests/test_failure_fingerprint.py`
+- `ForgeAI_CoreFoundation_Update/payload/tests/test_recovery_foundation.py`
+- `docs/RECOVERY_FOUNDATION.md`
+- `forgeai/core/failure_fingerprint.py`
+- `tests/test_failure_fingerprint.py`
+- `tests/test_recovery_foundation.py`
 
 #### Teststand
 
-- Pytest-Testfaelle: **296**
+- Pytest-Testfaelle: **347**
 
 #### Aktueller Plan
 
@@ -474,11 +490,11 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Letzte relevante Commits
 
-- `b196d7e (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) Add current LGDC n8n workflow`
+- `90b645c (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: improve request routing and reviewer handling`
+- `e259349 fix: stabilize Ollama integration and clean repository`
+- `b196d7e Add current LGDC n8n workflow`
 - `4471d65 feat: refresh reality before agent recovery`
 - `e8b229b feat: integrate project reality into agent workflow`
-- `e703362 feat: add deterministic reality collector`
-- `abb1685 feat: improve evidence-based project analysis`
 
 Dieser Abschnitt wird automatisch aus dem lokalen Git- und Teststand
 sowie aus der aktuellen ROADMAP.md erzeugt.
@@ -493,3 +509,17 @@ die aktuellen Review-, Execution- und Repair-Zähler festgehalten.
 
 Die Event-Historie ist Teil der Reality-Sicht und ersetzt nicht die
 autoritative `AgentRun`-History.
+
+<!-- FORGE:RECOVERY_FOUNDATION:START -->
+## Recovery-Grundgerüst (2026-10-05)
+
+- Vor jeder Recovery werden Index, vorhandene Reality-Evidence und Agent-Kontext aktualisiert.
+- Die nächste Analyse/Reparatur nutzt aktuelle freigegebene Inhalte und das bestehende Kontextbudget.
+- Ein Refresh-Fehler stoppt den Lauf ohne Rückgriff auf den alten Kontext.
+- `AgentRun.verification_history` erfasst Testergebnisse, Rundenzähler und Planpfade.
+- Fehlgeschlagene Tests erhalten stabile, versionierte `FailureFingerprint`-Signaturen.
+- Verifiziert: 347 Tests bestanden in der Linux-Testumgebung; Ollama-Antworten im Integrationstest ersetzt.
+- Noch offen: automatische Stagnationsentscheidung, Eskalation, Redesign, CompletionGate und Run-Persistenz.
+
+Details: `docs/RECOVERY_FOUNDATION.md`.
+<!-- FORGE:RECOVERY_FOUNDATION:END -->

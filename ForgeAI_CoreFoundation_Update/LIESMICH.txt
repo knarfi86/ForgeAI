@@ -1,0 +1,48 @@
+ForgeAI: Recovery-Grundgeruest / 2026-10-05
+
+INSTALLATION
+1. ForgeAI schliessen.
+2. Diese ZIP in einen beliebigen Ordner entpacken.
+3. INSTALL.cmd doppelklicken.
+
+Ziel: C:\Users\frank\Desktop\ForgeAI (allgemein: Benutzerprofil\Desktop\ForgeAI).
+Der Installer benutzt die vorhandene ForgeAI-venv, prueft den Dateistand,
+sichert die betroffenen Dateien, verteilt sie automatisch und startet
+Syntaxpruefung und pytest. Den ForgeAI-Ordner NICHT ersetzen.
+
+Bei anderem Projektpfad in PowerShell aus dem entpackten Paketordner:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\INSTALL.ps1 -ProjectRoot 'G:\ForgeAI'
+
+Ein abweichender Code-/Teststand stoppt die Installation vor der ersten
+Aenderung. Bereits installierte Dateien werden erkannt. Unterschiede in
+LF/CRLF oder einem UTF-8-BOM gelten nicht als inhaltlicher Codekonflikt.
+Die zwei Dokumentationsabschnitte werden angehaengt; bestehende Dokumentation
+wird dabei erhalten. Sicherungen liegen ausserhalb des Git-Projektordners;
+der genaue Pfad steht in der Installationsausgabe.
+
+ENTHALTEN
+- Frischer freigegebener Projektkontext vor jeder Recovery.
+- Abbruch ohne veralteten Kontext, wenn Refresh scheitert.
+- Versionierte Fehlersignaturen und Verifikationshistorie in AgentRun.
+- 19 neue Regressionstests und aktualisierte Architektur-/Statusdokumentation.
+
+Geprueft: 347/347 Tests in Linux mit Python 3.12 und PySide6 6.11.2.
+Echte Ollama-Antworten und Windows-Bedienung muessen lokal geprueft werden.
+Die Signatur ist eine Diagnosehilfe, kein Beweis fuer dieselbe Fehlerursache.
+Stagnationsentscheidungen/Eskalation folgen im naechsten Schritt.
+
+Dieses Paket basiert auf den Arbeitsdateien deiner ForgeAI.zip vom
+05.10.2026. Deren Git-Metadaten stehen noch auf e259349; die enthaltenen
+Routing-/Reviewer-Aenderungen werden erhalten. Es wird nichts committed
+oder gepusht. Alte Patch-ZIPs werden nicht entfernt.
+
+VERIFIKATIONSHINWEISE
+Die Testsuite der Ausgangs-ZIP besteht bereits mit 328/328 Tests.
+Der frueher gemeldete Timeout-Testfehler war hier nicht reproduzierbar.
+Der globale Encoding-Check findet bereits im Ausgangsstand UTF-8-BOMs
+in tests/test_agent_reviewer.py und tests/test_ollama_client.py.
+Der globale git-diff-Check meldet CRLF-Whitespace in weiteren vorhandenen
+Arbeitsdateien der Windows-ZIP. Diese Dateien wurden nicht veraendert.
+Die Dateien dieses Updates sind syntaktisch geprueft und UTF-8-gueltig;
+die Regressionstests bestehen. Der PowerShell-Gesamtworkflow mit seinen
+globalen Encoding-/Dokumentationschecks wurde hier nicht ausgefuehrt.

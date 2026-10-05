@@ -1,0 +1,14 @@
+Frische Verifikation des Updates
+
+Ausgangsstand: 328 passed (1.90 s).
+Implementierung: 347 passed (1.80 s).
+Installation auf neue Kopie der Original-ZIP: 347 passed (1.91 s).
+compileall fuer forgeai: bestanden.
+Diff-Whitespace-Pruefung der geaenderten Dateien mit CRLF-Toleranz: bestanden.
+Installer: Installation, Wiederholung, Konfliktschutz und Rollback bestanden.
+
+19 zusaetzliche Tests pruefen Kontextaktualisierung und Fehlersignaturen.
+Python 3.12, PySide6 6.11.2, pytest 9.1.1, Linux, QT_QPA_PLATFORM=offscreen.
+Netzwerkuebergang zu Ollama im Integrationstest durch feste Antworten ersetzt.
+Windows-Launcher und echter interaktiver Ollama-Lauf hier nicht ausgefuehrt.
+Bestehende globale Encoding-/Whitespace-Befunde: siehe LIESMICH.txt.

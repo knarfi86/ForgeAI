@@ -1,0 +1,692 @@
+--- a/forgeai/ai/agent_state.py
++++ b/forgeai/ai/agent_state.py
+@@ -5,6 +5,8 @@
+ from dataclasses import dataclass, field
+ from enum import Enum
+ from typing import Any
++
++from forgeai.core.failure_fingerprint import FailureFingerprint
+ 
+ 
+ logger = logging.getLogger(__name__)
+@@ -24,6 +26,19 @@
+     ABORTED = "aborted"
+ 
+ 
++@dataclass(frozen=True)
++class VerificationRecord:
++    """One observed result, with plan targets kept separate from actual writes."""
++
++    execution_round: int
++    repair_attempt: int
++    success: bool
++    test_output: str
++    failure_fingerprint: str | None
++    normalized_output: str
++    planned_paths: tuple[str, ...] = ()
++
++
+ @dataclass
+ class AgentRun:
+     task_id: str
+@@ -39,6 +54,29 @@
+     history: list[dict[str, Any]] = field(default_factory=list)
+     metadata: dict[str, Any] = field(default_factory=dict)
+     revision_context: list[dict[str, Any]] = field(default_factory=list)
++    verification_history: list[VerificationRecord] = field(default_factory=list)
++
++    def record_verification(
++        self,
++        success: bool,
++        test_output: str,
++        planned_paths: tuple[str, ...] = (),
++    ) -> VerificationRecord:
++        if self.state != AgentState.TESTING:
++            raise RuntimeError("Verifikation kann nur im Zustand 'testing' erfasst werden.")
++
++        fingerprint = None if success else FailureFingerprint.from_output(test_output)
++        record = VerificationRecord(
++            execution_round=self.execution_round,
++            repair_attempt=self.repair_attempt,
++            success=success,
++            test_output=test_output,
++            failure_fingerprint=fingerprint.signature if fingerprint else None,
++            normalized_output=fingerprint.normalized_output if fingerprint else "",
++            planned_paths=tuple(planned_paths),
++        )
++        self.verification_history.append(record)
++        return record
+ 
+     def transition(self, new_state: AgentState) -> None:
+         if not isinstance(new_state, AgentState):
+@@ -94,4 +132,4 @@
+         self.transition(AgentState.FAILED)
+ 
+     def abort(self) -> None:
+-        self.transition(AgentState.ABORTED)+        self.transition(AgentState.ABORTED)
+--- a/forgeai/ai/agent_orchestrator.py
++++ b/forgeai/ai/agent_orchestrator.py
+@@ -274,6 +274,13 @@
+ 
+         self.last_test_output = test_output
+ 
++        planned_paths = tuple(sorted({
++            change["path"]
++            for change in (self.current_plan.proposed_changes if self.current_plan else [])
++            if isinstance(change.get("path"), str) and change["path"]
++        }))
++        self.run.record_verification(success, test_output, planned_paths)
++
+         if success:
+             return self.complete()
+ 
+--- a/forgeai/ui/main_window.py
++++ b/forgeai/ui/main_window.py
+@@ -472,18 +472,20 @@
+     def _is_change_request(self, request: str) -> bool:
+         return is_project_change_request(request)
+ 
+-    def _build_agent_project_context(self) -> str:
+-        model_context_length = self.ollama.get_context_length(
+-            self.ollama_url,
+-            self.model,
+-        ) or 32_768
+-        context_plan = self.ollama.recommend_context_length(
+-            self.ollama_url,
+-            self.model,
+-            model_context_length,
+-            hard_limit=self._context_hard_limit(),
+-        )
+-        num_ctx = context_plan["recommended_context"]
++    def _build_agent_project_context(self, *, refresh_budget: bool = True) -> str:
++        num_ctx = self._agent_num_ctx
++        if refresh_budget or num_ctx is None:
++            model_context_length = self.ollama.get_context_length(
++                self.ollama_url,
++                self.model,
++            ) or 32_768
++            context_plan = self.ollama.recommend_context_length(
++                self.ollama_url,
++                self.model,
++                model_context_length,
++                hard_limit=self._context_hard_limit(),
++            )
++            num_ctx = context_plan["recommended_context"]
+         project_context_tokens = max(4_096, int(num_ctx * 0.55))
+         per_file_tokens = max(
+             2_048,
+@@ -1417,11 +1419,25 @@
+             self._set_agent_status("Kein Projekt für Recovery")
+             return
+ 
+-        if self._agent_reality is not None:
+-            RealityCollector(self.workspace.analyzer).collect_project(
+-                self._agent_reality,
+-                project,
++        # Never hand the pre-execution snapshot to recovery after a failed
++        # refresh. Read grants and the existing context budget still apply.
++        self._agent_project_context = ""
++        try:
++            self.workspace.refresh_index()
++            if self._agent_reality is not None:
++                RealityCollector(self.workspace.analyzer).collect_project(
++                    self._agent_reality,
++                    project,
++                )
++            self._agent_project_context = self._build_agent_project_context(
++                refresh_budget=False,
+             )
++        except Exception as error:
++            self._agent_orchestrator.fail()
++            self.input_bar.set_busy(False)
++            self.logger.error("Recovery context refresh failed: %s", error)
++            self._set_agent_status("Recovery gestoppt: Projektkontext konnte nicht aktualisiert werden")
++            return
+ 
+         self._set_agent_status("analysiere fehlgeschlagenen Testlauf")
+         self.input_bar.set_busy(True)
+@@ -1802,9 +1818,3 @@
+                 self.workspace.set_project_mode(ProjectMode(values["project_mode"]))
+             self._apply_theme()
+             self._update_status()
+-
+-
+-
+-
+-
+-
+--- a/forgeai/core/failure_fingerprint.py
++++ b/forgeai/core/failure_fingerprint.py
+@@ -0,0 +1,66 @@
++"""Deterministic failure identities without an LLM or runner dependency."""
++
++from __future__ import annotations
++
++import hashlib
++import re
++from dataclasses import dataclass
++
++
++@dataclass(frozen=True)
++class FailureFingerprint:
++    """Versioned identity of normalized diagnostic output, not a verdict."""
++
++    signature: str
++    normalized_output: str
++
++    @classmethod
++    def from_output(cls, output: str) -> FailureFingerprint:
++        text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
++        text = text.replace("\r\n", "\n").replace("\r", "\n")
++
++        def quoted_path(match: re.Match) -> str:
++            quote, path = match.group(1), match.group(2)
++            name = path.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
++            return f"{quote}<PATH>/{name}{quote}"
++
++        # Keep the filename. Different workspaces must not change identity,
++        # but main.py and combat.py must remain distinguishable.
++        text = re.sub(r'''(["'])((?:[A-Za-z]:[\\/]|/|\\\\)[^"'\n]+)\1''', quoted_path, text)
++
++        def absolute_path(match: re.Match) -> str:
++            name = match.group().replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
++            return f"<PATH>/{name}"
++
++        text = re.sub(
++            r'''(?<![\w.<>])(?:[A-Za-z]:[\\/]|\\\\|/)[^\s'"<>:,;()]+''',
++            absolute_path,
++            text,
++        )
++        text = re.sub(r"\bline\s+\d+\b", "line <N>", text, flags=re.IGNORECASE)
++        text = re.sub(
++            r"(\b[\w.-]+\.(?:py|pyw|cpp|c|h|hpp|cs|js|ts|tsx|jsx|java|rs|go|lua)):\d+(?::\d+)?",
++            r"\1:<N>",
++            text,
++        )
++        text = re.sub(
++            r"(\b(?:at|address|pointer)\s*(?:[=:]\s*)?)0x[0-9a-fA-F]+\b",
++            r"\1<ADDR>",
++            text,
++        )
++        text = re.sub(
++            r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?\b",
++            "<TIME>",
++            text,
++        )
++        text = re.sub(r"\bin\s+\d+(?:\.\d+)?\s*(?:seconds?|secs?|s)\b", "in <TIME>", text)
++        text = re.sub(r"\b\d+ passed\b", "<N> passed", text)
++
++        lines = []
++        for line in text.splitlines():
++            line = line.strip()
++            if line and not re.fullmatch(r"[.FsEx]+(?:\s+\[\s*\d+%\])?", line):
++                lines.append(line)
++        normalized = "\n".join(lines) or "<NO_TEST_OUTPUT>"
++        digest = hashlib.sha256(("v1\n" + normalized).encode("utf-8")).hexdigest()[:16]
++        return cls(signature=f"E-v1-{digest}", normalized_output=normalized)
+--- a/tests/test_agent_recovery_ui.py
++++ b/tests/test_agent_recovery_ui.py
+@@ -55,17 +55,20 @@
+     window._agent_recovery_worker = None
+     window._agent_project_context = "project-context"
+     window._agent_num_ctx = None
++    window._agent_reality = None
+     window.model = "test-model"
+     window.ollama_url = "http://localhost:11434"
+     window.agent_review_enabled = True
+     window.workspace = SimpleNamespace(
+         active_project="C:/project",
+         analyzer=SimpleNamespace(),
++        refresh_index=lambda: None,
+     )
+     window.input_bar = _FakeInputBar()
+     window.logger = _FakeLogger()
+     window.statuses = []
+     window._set_agent_status = window.statuses.append
++    window._build_agent_project_context = lambda **kwargs: "fresh-context"
+     return window
+ 
+ 
+@@ -249,3 +252,47 @@
+     assert calls[0] == ("init", window.workspace.analyzer)
+     assert calls[1] == ("collect", reality, "C:/project")
+     assert calls[2] == ("worker", orchestrator)
++
++
++def test_recovery_rebuilds_context_after_rescan_before_worker(monkeypatch):
++    orchestrator = SimpleNamespace(run=SimpleNamespace(state=AgentState.ANALYZING))
++    window = _make_window(orchestrator)
++    calls = []
++    window._agent_num_ctx = 8192
++    window.workspace.refresh_index = lambda: calls.append("rescan")
++
++    def build_context(**kwargs):
++        assert kwargs == {"refresh_budget": False}
++        assert calls == ["rescan"]
++        calls.append("context")
++        return "updated source code"
++
++    window._build_agent_project_context = build_context
++    monkeypatch.setattr(main_window_module, "AgentRecoveryWorker", _FakeWorker)
++    window._start_agent_recovery("1 failed")
++
++    assert calls == ["rescan", "context"]
++    assert _FakeWorker.created.kwargs["project_context"] == "updated source code"
++    assert _FakeWorker.created.kwargs["num_ctx"] == 8192
++    assert _FakeWorker.created.started
++
++
++def test_recovery_context_failure_stops_without_using_stale_context(monkeypatch):
++    from forgeai.ai.agent_orchestrator import AgentOrchestrator
++    from forgeai.ai.agent_state import AgentRun
++
++    run = AgentRun("task-1", state=AgentState.ANALYZING)
++    window = _make_window(AgentOrchestrator(run))
++
++    def fail_refresh():
++        raise PermissionError("unreadable workspace")
++
++    window.workspace.refresh_index = fail_refresh
++    workers = []
++    monkeypatch.setattr(main_window_module, "AgentRecoveryWorker", lambda **kw: workers.append(kw))
++    window._start_agent_recovery("1 failed")
++
++    assert workers == []
++    assert window._agent_project_context == ""
++    assert run.state == AgentState.FAILED
++    assert window.input_bar.busy_values[-1] is False
+--- a/tests/test_failure_fingerprint.py
++++ b/tests/test_failure_fingerprint.py
+@@ -0,0 +1,49 @@
++import pytest
++
++from forgeai.core.failure_fingerprint import FailureFingerprint
++
++
++def fingerprint(output):
++    return FailureFingerprint.from_output(output).signature
++
++
++def test_traceback_signature_ignores_location_address_timing_and_color():
++    first = ('\x1b[31mFile "C:\\Users\\Frank\\Game\\main.py", line 17, in update\x1b[0m\r\n'
++             'AttributeError: object at 0xAB12 has no attribute velocity\r\n'
++             '1 failed, 10 passed in 0.52s')
++    second = ('File "/tmp/project/main.py", line 88, in update\n'
++              'AttributeError: object at 0xFF34 has no attribute velocity\n'
++              '1 failed, 10 passed in 3.98s')
++    assert fingerprint(first) == fingerprint(second)
++
++
++@pytest.mark.parametrize("first,second", [
++    ('tests/test_move.py:12: AssertionError', 'tests/test_move.py:89: AssertionError'),
++    ('Ran 1 test in 0.031s\nFAILED (failures=1)', 'Ran 1 test in 4.850s\nFAILED (failures=1)'),
++    ('2026-10-05T09:00:00Z ERROR: missing file', '2026-10-06T11:30:59Z ERROR: missing file'),
++    ('FAIL: C:\\Game\\tests\\test_move.py:12', 'FAIL: /tmp/game/tests/test_move.py:90'),
++])
++def test_volatile_metadata_does_not_change_signature(first, second):
++    assert fingerprint(first) == fingerprint(second)
++
++
++@pytest.mark.parametrize("first,second", [
++    ('AssertionError: HP 10 != 20', 'AssertionError: HP 10 != 30'),
++    ('FAILED tests/test_move.py::test_move', 'FAILED tests/test_attack.py::test_attack'),
++    ('File "/tmp/game/main.py", line 1\nValueError: invalid', 'File "/tmp/game/combat.py", line 1\nValueError: invalid'),
++    ('KeyError: velocity', 'KeyError: health'),
++    ('ImportError: package.module_a', 'ImportError: package.module_b'),
++    ('assert speed / duration == 2', 'assert speed / distance == 2'),
++    ('AssertionError: flags 0x01 != 0x02', 'AssertionError: flags 0x01 != 0x03'),
++    ('AssertionError: expected "a b"', 'AssertionError: expected "a  b"'),
++])
++def test_material_error_information_remains_distinct(first, second):
++    assert fingerprint(first) != fingerprint(second)
++
++
++def test_empty_output_has_explicit_fallback_and_stable_versioned_signature():
++    empty = FailureFingerprint.from_output("")
++    assert empty == FailureFingerprint.from_output("  \r\n")
++    assert empty.normalized_output == "<NO_TEST_OUTPUT>"
++    assert empty.signature.startswith("E-v1-")
++    assert len(empty.signature) == len("E-v1-") + 16
+--- a/tests/test_recovery_foundation.py
++++ b/tests/test_recovery_foundation.py
+@@ -0,0 +1,142 @@
++import json
++from dataclasses import asdict
++from types import SimpleNamespace
++
++import forgeai.ai.agent_ui_worker as worker_module
++import forgeai.ui.main_window as window_module
++from forgeai.ai.agent_contracts import AgentPlan, AgentTask
++from forgeai.ai.agent_orchestrator import AgentOrchestrator
++from forgeai.ai.agent_state import AgentRun, AgentState
++from forgeai.core.ai_context import AIContextProvider
++from forgeai.core.file_indexer import FileIndexer
++from forgeai.core.filesystem import FileSystem
++from forgeai.core.workspace_database import WorkspaceDatabase
++from forgeai.core.workspace_manager import WorkspaceManager
++from forgeai.ui.main_window import MainWindow
++
++
++def test_verification_history_tracks_same_changed_and_resolved_failure():
++    run = AgentRun("task-1")
++    orchestrator = AgentOrchestrator(run)
++    orchestrator.current_plan = AgentPlan(
++        summary="Fix movement",
++        proposed_changes=[{"path": "main.py", "action": "replace"}],
++    )
++    outputs = [
++        (False, 'File "/tmp/game/main.py", line 12\nKeyError: velocity'),
++        (False, 'File "C:\\Game\\main.py", line 99\nKeyError: velocity'),
++        (False, 'File "C:\\Game\\main.py", line 99\nKeyError: health'),
++        (True, "2 passed in 0.1s"),
++    ]
++    for index, (success, output) in enumerate(outputs):
++        if index:
++            orchestrator.begin_repair()
++        orchestrator.begin_execution()
++        orchestrator.begin_testing()
++        orchestrator.handle_verification_result(success, output)
++
++    history = run.verification_history
++    assert len(history) == 4
++    assert history[0].failure_fingerprint == history[1].failure_fingerprint
++    assert history[1].failure_fingerprint != history[2].failure_fingerprint
++    assert history[3].failure_fingerprint is None
++    assert [entry.execution_round for entry in history] == [1, 2, 3, 4]
++    assert [entry.repair_attempt for entry in history] == [0, 1, 2, 3]
++    assert history[0].planned_paths == ("main.py",)
++    assert history[0].test_output == outputs[0][1]
++    orchestrator.current_plan.proposed_changes[0]["path"] = "other.py"
++    assert history[0].planned_paths == ("main.py",)
++    json.dumps([asdict(entry) for entry in history])
++    assert run.state == AgentState.COMPLETED
++
++
++def test_out_of_state_verification_does_not_record_result():
++    import pytest
++
++    run = AgentRun("task-1")
++    with pytest.raises(RuntimeError):
++        AgentOrchestrator(run).handle_verification_result(False, "error")
++    assert run.verification_history == []
++    assert AgentRun("other-task").verification_history == []
++
++
++def test_real_workspace_refresh_reaches_analyzer_repairer_reviewer_and_coder(tmp_path, monkeypatch):
++    project = tmp_path / "game"
++    project.mkdir()
++    source = project / "main.py"
++    source.write_text("OLD_SOURCE = True", encoding="utf-8")
++    (project / "private.py").write_text("PRIVATE_SECRET = True", encoding="utf-8")
++    db = WorkspaceDatabase(tmp_path / "workspace.db")
++    fs = FileSystem()
++    workspace = WorkspaceManager(db, FileIndexer(db, fs))
++    workspace.open_project(project)
++    workspace.grant_ai_access(source)
++    provider = AIContextProvider(db, fs, workspace.ai_accessible_files)
++    old_context, _ = provider.build(project)
++    source.write_text("NEW_SOURCE = True", encoding="utf-8")
++    new_file = project / "new.py"
++    new_file.write_text("NEW_FILE = True", encoding="utf-8")
++    workspace.grant_session_access(new_file)
++
++    window = MainWindow.__new__(MainWindow)
++    window.workspace = workspace
++    window.ai_context = provider
++    window._agent_project_context = old_context
++    window._agent_num_ctx = 8192
++    window._agent_reality = None
++    window._agent_task = AgentTask(task_id="task-1", user_request="Fix movement")
++    run = AgentRun("task-1", state=AgentState.TESTING)
++    orchestrator = AgentOrchestrator(run)
++    orchestrator.handle_verification_result(False, "KeyError: velocity")
++    window._agent_orchestrator = orchestrator
++    window._agent_recovery_worker = None
++    window.model = "test-model"
++    window.ollama_url = "http://localhost:11434"
++    window.agent_review_enabled = True
++    window.logger = SimpleNamespace(info=lambda *args: None, error=lambda *args: None)
++    window.input_bar = SimpleNamespace(set_busy=lambda busy: None)
++    window._set_agent_status = lambda text: None
++
++    responses = iter([
++        {"summary": "Missing velocity", "root_cause": "Key missing", "repair_requirements": ["Initialize velocity"]},
++        {"summary": "Initialize", "proposed_changes": [{"action": "replace", "path": "main.py", "description": "Initialize velocity"}]},
++        {"decision": "approve", "findings": [], "required_changes": [], "rationale": "Valid"},
++    ])
++    prompts = []
++
++    def generate(self, *, prompt, **kwargs):
++        prompts.append(prompt)
++        return json.dumps(next(responses))
++
++    monkeypatch.setattr(worker_module.OllamaClient, "generate", generate)
++
++    class InlineRecoveryWorker(worker_module.AgentRecoveryWorker):
++        def __init__(self, **kwargs):
++            kwargs.pop("parent")
++            super().__init__(**kwargs)
++
++        def start(self):
++            self.run()
++
++    monkeypatch.setattr(window_module, "AgentRecoveryWorker", InlineRecoveryWorker)
++    results, errors = [], []
++    window._agent_recovery_finished = lambda *args: results.append(args)
++    window._agent_recovery_failed = errors.append
++    window._start_agent_recovery("KeyError: velocity")
++
++    assert errors == []
++    assert len(results) == 1
++    assert len(prompts) == 3
++    for prompt in prompts:
++        assert "NEW_SOURCE = True" in prompt
++        assert "NEW_FILE = True" in prompt
++        assert "OLD_SOURCE = True" not in prompt
++        assert "PRIVATE_SECRET" not in prompt
++    # Coder consumes the same MainWindow context after repair approval.
++    assert "NEW_SOURCE = True" in window._agent_project_context
++    assert "NEW_FILE = True" in window._agent_project_context
++    assert orchestrator.run.state == AgentState.APPROVAL_REQUIRED
++    assert "new.py" in [row["relative_path"] for row in db.fetchall(
++        "SELECT relative_path FROM project_files WHERE project_path=?", (str(project),)
++    )]
++    db.connection.close()
+--- a/docs/RECOVERY_FOUNDATION.md
++++ b/docs/RECOVERY_FOUNDATION.md
+@@ -0,0 +1,72 @@
++# Recovery-Grundgerüst: ContextRefresh und FailureFingerprint
++
++Stand: 2026-10-05. Diese Erweiterung überträgt die ersten allgemeinen
++Recovery-Erkenntnisse aus dem n8n-Prototyp nach ForgeAI.
++
++## Aktueller Projektkontext
++
++Vor jedem `AgentRecoveryWorker` führt `MainWindow` folgende Schritte aus:
++
++1. Den alten Agent-Kontext verwerfen.
++2. Den Workspace-Index neu einlesen.
++3. Falls vorhanden, die Project-Evidence in `AgentReality` aktualisieren.
++4. Den Kontext mit `AIContextProvider.build` neu aus den aktuell freigegebenen
++   Dateien aufbauen. Das bereits ermittelte Kontextbudget bleibt bestehen.
++5. Diesen Kontext an Analyzer, Repairer und Reviewer übergeben und für die
++   folgende Coder-Ausführung in `MainWindow` behalten.
++
++Eine Aktualisierung erteilt keine zusätzlichen Lesefreigaben. Neue Dateien
++werden berücksichtigt, wenn eine gültige Datei-, Verzeichnis- oder
++Session-Freigabe sie umfasst. Scheitert die Aktualisierung, wird der Lauf
++`FAILED`; es startet keine Reparatur mit einem veralteten Kontext.
++
++## Fehlersignaturen und Verifikationshistorie
++
++`FailureFingerprint.from_output` erzeugt aus fehlgeschlagenen Testausgaben
++eine deterministische Signatur der Form `E-v1-<16 Hex-Zeichen>`.
++
++Die Normalisierung gleicht ANSI-Farben, Zeilenenden, absolute Verzeichnisse,
++Quellcode-Zeilennummern, erkannte Speicheradressen, ISO-Zeitstempel,
++Laufzeiten und die Zahl erfolgreicher Tests aus. Dateinamen, relative
++Testpfade, Testnamen und fachliche Fehlerwerte bleiben erhalten.
++Eine leere Ausgabe erhält den expliziten Ersatz `<NO_TEST_OUTPUT>`.
++
++Absolute Pfade werden auf `<PATH>/<Dateiname>` reduziert. Gleichnamige
++Dateien in unterschiedlichen absoluten Verzeichnissen können deshalb
++dieselbe normalisierte Ortsangabe haben. Die Signatur ist ein Hinweis auf
++wiederholte Diagnosen, kein Beweis für identische Ursachen. Beliebige
++Runner-Ausgaben werden noch nicht als strukturierte Einzelfehler geparst.
++
++`AgentRun.verification_history` enthält für jede tatsächlich verarbeitete
++Verifikation einen unveränderlichen `VerificationRecord` mit:
++
++- Ausführungsrunde und Reparaturzähler zum Testzeitpunkt;
++- Erfolg oder Misserfolg;
++- unveränderter Testausgabe;
++- Fehlersignatur und normalisierter Diagnose bei Misserfolg;
++- den Dateipfaden des zugehörigen Plans (`planned_paths`).
++
++Planpfade sind keine Bestätigung tatsächlich geschriebener Dateien. Auch
++erfolgreiche Tests werden erfasst, besitzen aber keine Fehlersignatur.
++Die vorhandene Zustands-History bleibt davon getrennt und kompatibel.
++
++## Nachgewiesenes Verhalten
++
++Die Regressionstests prüfen frische Dateiinhalte über den realen Workspace
++und `AIContextProvider` bis in die Analyzer-, Repairer- und Reviewer-Prompts,
++neue Session-Freigaben, den Ausschluss privater Inhalte, den Abbruch bei
++fehlgeschlagener Aktualisierung sowie identische, geänderte und anschließend
++behobene Fehler über mehrere Ausführungsrunden.
++
++Die Modellantworten werden am Ollama-Netzwerkübergang durch feste Testantworten
++ersetzt. Ein echter lokaler Ollama-/Windows-Gesamtlauf ist damit nicht
++nachgewiesen. Die vollständige Linux-Testsuite besteht mit 347 Tests.
++
++## Nächste Schritte
++
++Diese Grundlage ändert keine Repair-Budgets oder Freigaben. Sie führt noch
++keine automatische Stagnationsentscheidung, Dependency-Eskalation,
++Redesign-Schleife, Run-Persistenz nach Neustart oder CompletionGate ein.
++Diese Mechanismen können anschließend auf aktuellen Kontexten und der
++Verifikationshistorie aufbauen. ComfyUI, Video, Blender, Hunyuan3D und Audio
++bleiben spätere Erweiterungen.
+--- a/ARCHITECTURE.md
++++ b/ARCHITECTURE.md
+@@ -430,19 +430,23 @@
+ - `.gitconfig`
+ - `.gitignore`
+ - `README.md`
++- `forgeai/ai/agent_orchestrator.py`
+ - `forgeai/ai/agent_reviewer.py`
++- `forgeai/ai/agent_state.py`
+ - `forgeai/ai/ollama_client.py`
+ - `forgeai/ai/prompts.py`
+ - `forgeai/core/workspace_manager.py`
+ - `forgeai/ui/main_window.py`
+ - `pytest.ini`
+ - `scripts/run_tests.ps1`
++- `tests/test_agent_recovery_ui.py`
+ - `tests/test_agent_reviewer.py`
+ - `tests/test_ollama_client.py`
+ - `tests/test_workspace_manager.py`
+ - `ForgeAI_Reviewer_Routing_PATCH.zip`
+ - `INSTALLATION.txt`
+ - `INSTALLATION_PROMPT_FIX.txt`
++- `docs/RECOVERY_FOUNDATION.md`
+ - `"forgeai/ForgeAI_PromptFix_V2_PATCH (1).zip"`
+ - `forgeai/ForgeAI_Reviewer_Routing_PATCH/INSTALLATION.txt`
+ - `forgeai/ForgeAI_Reviewer_Routing_PATCH/README.md`
+@@ -452,7 +456,10 @@
+ - `forgeai/ForgeAI_Reviewer_Routing_PATCH/tests/test_agent_reviewer.py`
+ - `forgeai/ForgeAI_Reviewer_Routing_PATCH/tests/test_request_routing.py`
+ - `forgeai/ai/request_routing.py`
++- `forgeai/core/failure_fingerprint.py`
++- `tests/test_failure_fingerprint.py`
+ - `tests/test_prompt_creation.py`
++- `tests/test_recovery_foundation.py`
+ - `tests/test_request_routing.py`
+ 
+ #### Letzte relevante Commits
+@@ -514,6 +521,24 @@
+ 
+ `AgentRun` verwaltet den autoritativen Zustand.
+ 
++<!-- FORGE:RECOVERY_FOUNDATION:START -->
++## Recovery-Grundgerüst: aktueller Kontext und Fehlersignaturen
++
++Vor jedem Recovery-Lauf werden Workspace-Index, vorhandene Reality-Evidence
++und der tatsächlich an Analyzer/Repairer übergebene Projektkontext erneuert.
++Dateifreigaben und das bestehende Kontextbudget bleiben maßgeblich.
++Ein fehlgeschlagener Refresh beendet den Lauf, statt alten Kontext zu nutzen.
++
++Der Orchestrator erfasst Verifikationsergebnisse als unveränderliche
++`VerificationRecord`-Einträge in `AgentRun.verification_history`.
++Fehlgeschlagene Ergebnisse erhalten eine deterministische, versionierte
++`FailureFingerprint`-Signatur. Die bestehende Zustands-History bleibt erhalten.
++
++Diese Daten sind die Grundlage für spätere Stagnationserkennung; automatische
++Eskalation und dauerhafte Run-Persistenz sind noch nicht implementiert.
++Details und nachgewiesene Grenzen: `docs/RECOVERY_FOUNDATION.md`.
++<!-- FORGE:RECOVERY_FOUNDATION:END -->
++
+ `AgentReality` stellt eine strukturierte Sicht auf diesen Zustand bereit.
+ 
+ `AgentEvent` dokumentiert den beobachteten Zustand innerhalb dieser Sicht.
+--- a/docs/CURRENT_STATE.md
++++ b/docs/CURRENT_STATE.md
+@@ -431,19 +431,23 @@
+ - `.gitconfig`
+ - `.gitignore`
+ - `README.md`
++- `forgeai/ai/agent_orchestrator.py`
+ - `forgeai/ai/agent_reviewer.py`
++- `forgeai/ai/agent_state.py`
+ - `forgeai/ai/ollama_client.py`
+ - `forgeai/ai/prompts.py`
+ - `forgeai/core/workspace_manager.py`
+ - `forgeai/ui/main_window.py`
+ - `pytest.ini`
+ - `scripts/run_tests.ps1`
++- `tests/test_agent_recovery_ui.py`
+ - `tests/test_agent_reviewer.py`
+ - `tests/test_ollama_client.py`
+ - `tests/test_workspace_manager.py`
+ - `ForgeAI_Reviewer_Routing_PATCH.zip`
+ - `INSTALLATION.txt`
+ - `INSTALLATION_PROMPT_FIX.txt`
++- `docs/RECOVERY_FOUNDATION.md`
+ - `"forgeai/ForgeAI_PromptFix_V2_PATCH (1).zip"`
+ - `forgeai/ForgeAI_Reviewer_Routing_PATCH/INSTALLATION.txt`
+ - `forgeai/ForgeAI_Reviewer_Routing_PATCH/README.md`
+@@ -453,12 +457,15 @@
+ - `forgeai/ForgeAI_Reviewer_Routing_PATCH/tests/test_agent_reviewer.py`
+ - `forgeai/ForgeAI_Reviewer_Routing_PATCH/tests/test_request_routing.py`
+ - `forgeai/ai/request_routing.py`
++- `forgeai/core/failure_fingerprint.py`
++- `tests/test_failure_fingerprint.py`
+ - `tests/test_prompt_creation.py`
++- `tests/test_recovery_foundation.py`
+ - `tests/test_request_routing.py`
+ 
+ #### Teststand
+ 
+-- Pytest-Testfaelle: **328**
++- Pytest-Testfaelle: **347**
+ 
+ #### Aktueller Plan
+ 
+@@ -510,3 +517,17 @@
+ 
+ Die Event-Historie ist Teil der Reality-Sicht und ersetzt nicht die
+ autoritative `AgentRun`-History.
++
++<!-- FORGE:RECOVERY_FOUNDATION:START -->
++## Recovery-Grundgerüst (2026-10-05)
++
++- Vor jeder Recovery werden Index, vorhandene Reality-Evidence und Agent-Kontext aktualisiert.
++- Die nächste Analyse/Reparatur nutzt aktuelle freigegebene Inhalte und das bestehende Kontextbudget.
++- Ein Refresh-Fehler stoppt den Lauf ohne Rückgriff auf den alten Kontext.
++- `AgentRun.verification_history` erfasst Testergebnisse, Rundenzähler und Planpfade.
++- Fehlgeschlagene Tests erhalten stabile, versionierte `FailureFingerprint`-Signaturen.
++- Verifiziert: 347 Tests bestanden in der Linux-Testumgebung; Ollama-Antworten im Integrationstest ersetzt.
++- Noch offen: automatische Stagnationsentscheidung, Eskalation, Redesign, CompletionGate und Run-Persistenz.
++
++Details: `docs/RECOVERY_FOUNDATION.md`.
++<!-- FORGE:RECOVERY_FOUNDATION:END -->

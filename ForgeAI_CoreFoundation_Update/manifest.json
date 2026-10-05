@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "path": "forgeai/ai/agent_state.py",
+      "mode": "replace",
+      "old_sha256": "f52b6fadd221c6ccecbf88c3ae7ea608ffc68f18937933bcd86cf81768b6e2f8",
+      "new_sha256": "1b16db172e8a812ed5e28089d6bd12052e4e5e66bbddb481ab72117704797a95"
+    },
+    {
+      "path": "forgeai/ai/agent_orchestrator.py",
+      "mode": "replace",
+      "old_sha256": "6e71a30dc6fd605d4131ffd5b52482854209228b408628683595794864c6afc4",
+      "new_sha256": "46cc1e5690b9d8cb34817f27fe882826a39b352efabdc173e9e84ca54e86f52e"
+    },
+    {
+      "path": "forgeai/ui/main_window.py",
+      "mode": "replace",
+      "old_sha256": "63d138e3435e8b78c08868e1c128b112a69d70b2496166853d7bea36fdc1a453",
+      "new_sha256": "7ad942ceb36b68cf591c9fe185553a3599aaa4609875af7ab7a6b79e406734be"
+    },
+    {
+      "path": "forgeai/core/failure_fingerprint.py",
+      "mode": "replace",
+      "old_sha256": null,
+      "new_sha256": "47fe3c068432405f634776ce7799a816925e3622ccfa21d75b0ea3a11494c1bf"
+    },
+    {
+      "path": "tests/test_agent_recovery_ui.py",
+      "mode": "replace",
+      "old_sha256": "214479aeaff3fed49792a1a7d9b6e519ba68ae8c6a532ff586cbf3902b68dde9",
+      "new_sha256": "06d6bebb770b206f5e6e7a4e483fa3d934a7c44711f28af6b03268f7c71dce9d"
+    },
+    {
+      "path": "tests/test_failure_fingerprint.py",
+      "mode": "replace",
+      "old_sha256": null,
+      "new_sha256": "560b3b67c9b642bfacf30c208f4c1d729b21adeec335e88927c30b67cf2fe7fe"
+    },
+    {
+      "path": "tests/test_recovery_foundation.py",
+      "mode": "replace",
+      "old_sha256": null,
+      "new_sha256": "995c0da4ec8f3e46ff57165001378530ac658cd30b693e55a9461df5dc7b8830"
+    },
+    {
+      "path": "docs/RECOVERY_FOUNDATION.md",
+      "mode": "replace",
+      "old_sha256": null,
+      "new_sha256": "60e3bfe215bd9a0067e951c1de5e39bd508fe27b201bac92c5d520ea8dbd8a88"
+    },
+    {
+      "path": "ARCHITECTURE.md",
+      "mode": "append",
+      "new_sha256": "d85f16d527aec8075234cb468f633af628a26a324d054964017c406489d486da"
+    },
+    {
+      "path": "docs/CURRENT_STATE.md",
+      "mode": "append",
+      "new_sha256": "b44caff04b1e2c8a029ecd58720ece984cd1f77d2961ffe98c6160157bfbb1cf"
+    }
+  ]
+}

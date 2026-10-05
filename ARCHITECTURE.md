@@ -427,24 +427,40 @@ Die erste technische Implementierung befindet sich in
 
 #### Aktuell betroffene Dateien
 
-- `.gitignore`
-- `forgeai/ai/ollama_client.py`
-- `forgeai/core/project_analyzer.py.bak`
-- `forgeai/core/project_analyzer.py.before_package_link.bak`
-- `forgeai/core/workspace_manager.py`
+- `forgeai/ai/agent_orchestrator.py`
+- `forgeai/ai/agent_state.py`
 - `forgeai/ui/main_window.py`
-- `path/to/filename.js`
-- `tests/test_ollama_client.py`
-- `tests/test_workspace_manager.py`
-- `"\342\224\224\342\224\200\342\224\200 README.md"`
+- `tests/test_agent_recovery_ui.py`
+- `ForgeAI_CoreFoundation_Update.zip`
+- `ForgeAI_CoreFoundation_Update/INSTALL.cmd`
+- `ForgeAI_CoreFoundation_Update/INSTALL.ps1`
+- `ForgeAI_CoreFoundation_Update/LIESMICH.txt`
+- `ForgeAI_CoreFoundation_Update/PRUEFUNG.txt`
+- `ForgeAI_CoreFoundation_Update/changes.patch`
+- `ForgeAI_CoreFoundation_Update/install.py`
+- `ForgeAI_CoreFoundation_Update/manifest.json`
+- `ForgeAI_CoreFoundation_Update/payload/ARCHITECTURE.md`
+- `ForgeAI_CoreFoundation_Update/payload/docs/CURRENT_STATE.md`
+- `ForgeAI_CoreFoundation_Update/payload/docs/RECOVERY_FOUNDATION.md`
+- `ForgeAI_CoreFoundation_Update/payload/forgeai/ai/agent_orchestrator.py`
+- `ForgeAI_CoreFoundation_Update/payload/forgeai/ai/agent_state.py`
+- `ForgeAI_CoreFoundation_Update/payload/forgeai/core/failure_fingerprint.py`
+- `ForgeAI_CoreFoundation_Update/payload/forgeai/ui/main_window.py`
+- `ForgeAI_CoreFoundation_Update/payload/tests/test_agent_recovery_ui.py`
+- `ForgeAI_CoreFoundation_Update/payload/tests/test_failure_fingerprint.py`
+- `ForgeAI_CoreFoundation_Update/payload/tests/test_recovery_foundation.py`
+- `docs/RECOVERY_FOUNDATION.md`
+- `forgeai/core/failure_fingerprint.py`
+- `tests/test_failure_fingerprint.py`
+- `tests/test_recovery_foundation.py`
 
 #### Letzte relevante Commits
 
-- `b196d7e (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) Add current LGDC n8n workflow`
+- `90b645c (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: improve request routing and reviewer handling`
+- `e259349 fix: stabilize Ollama integration and clean repository`
+- `b196d7e Add current LGDC n8n workflow`
 - `4471d65 feat: refresh reality before agent recovery`
 - `e8b229b feat: integrate project reality into agent workflow`
-- `e703362 feat: add deterministic reality collector`
-- `abb1685 feat: improve evidence-based project analysis`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell
@@ -500,3 +516,21 @@ Damit bleibt die Verantwortungsverteilung erhalten:
 `AgentReality` stellt eine strukturierte Sicht auf diesen Zustand bereit.
 
 `AgentEvent` dokumentiert den beobachteten Zustand innerhalb dieser Sicht.
+
+<!-- FORGE:RECOVERY_FOUNDATION:START -->
+## Recovery-Grundgerüst: aktueller Kontext und Fehlersignaturen
+
+Vor jedem Recovery-Lauf werden Workspace-Index, vorhandene Reality-Evidence
+und der tatsächlich an Analyzer/Repairer übergebene Projektkontext erneuert.
+Dateifreigaben und das bestehende Kontextbudget bleiben maßgeblich.
+Ein fehlgeschlagener Refresh beendet den Lauf, statt alten Kontext zu nutzen.
+
+Der Orchestrator erfasst Verifikationsergebnisse als unveränderliche
+`VerificationRecord`-Einträge in `AgentRun.verification_history`.
+Fehlgeschlagene Ergebnisse erhalten eine deterministische, versionierte
+`FailureFingerprint`-Signatur. Die bestehende Zustands-History bleibt erhalten.
+
+Diese Daten sind die Grundlage für spätere Stagnationserkennung; automatische
+Eskalation und dauerhafte Run-Persistenz sind noch nicht implementiert.
+Details und nachgewiesene Grenzen: `docs/RECOVERY_FOUNDATION.md`.
+<!-- FORGE:RECOVERY_FOUNDATION:END -->
