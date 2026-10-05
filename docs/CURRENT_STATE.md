@@ -428,12 +428,20 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Aktuell geänderte Dateien
 
+- `.gitignore`
+- `forgeai/ai/ollama_client.py`
+- `forgeai/core/project_analyzer.py.bak`
+- `forgeai/core/project_analyzer.py.before_package_link.bak`
+- `forgeai/core/workspace_manager.py`
 - `forgeai/ui/main_window.py`
-- `tests/test_agent_recovery_ui.py`
+- `path/to/filename.js`
+- `tests/test_ollama_client.py`
+- `tests/test_workspace_manager.py`
+- `"\342\224\224\342\224\200\342\224\200 README.md"`
 
 #### Teststand
 
-- Pytest-Testfaelle: **292**
+- Pytest-Testfaelle: **296**
 
 #### Aktueller Plan
 
@@ -466,11 +474,11 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Letzte relevante Commits
 
-- `e8b229b (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: integrate project reality into agent workflow`
+- `b196d7e (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) Add current LGDC n8n workflow`
+- `4471d65 feat: refresh reality before agent recovery`
+- `e8b229b feat: integrate project reality into agent workflow`
 - `e703362 feat: add deterministic reality collector`
 - `abb1685 feat: improve evidence-based project analysis`
-- `bd99585 fix: refine event evidence validation and documentation`
-- `415c9d3 feat: integrate validated claims into project analysis`
 
 Dieser Abschnitt wird automatisch aus dem lokalen Git- und Teststand
 sowie aus der aktuellen ROADMAP.md erzeugt.

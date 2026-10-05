@@ -1,0 +1,11 @@
+ForgeAI Patch - 05.10.2026
+
+1. ForgeAI schliessen.
+2. Diese ZIP DIREKT in deinen vorhandenen ForgeAI-Projektordner entpacken.
+3. Bei den geaenderten Dateien 'Ueberschreiben' auswaehlen.
+4. ForgeAI wie bisher starten.
+
+Enthaelt nur geaenderte und neue Quelldateien; kein .git, keine Modelle, keine Datenbank.
+Das bestehende Git-Verzeichnis bleibt unangetastet.
+
+Wirkung: Reine Prompt-/Textwuensche gehen zum Chat, tatsaechliche Dateiaktionen weiterhin zum Agenten. Reviewer verlangt fuer behauptete ForgeAI-Regeln eine konkrete Quelle.

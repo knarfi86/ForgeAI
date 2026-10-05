@@ -1,0 +1,28 @@
+ForgeAI Prompt-Fix 2 (fuer die Version mit dem vorherigen Reviewer-/Routing-Patch)
+==============================================================================
+
+WICHTIG: Den bestehenden ForgeAI-Hauptordner NICHT loeschen oder komplett ersetzen!
+
+1. ForgeAI schliessen.
+2. Diese ZIP oeffnen.
+3. Die Dateien und Unterordner aus der ZIP markieren (Strg+A), kopieren (Strg+C).
+4. Den BESTEHENDEN ForgeAI-Hauptordner oeffnen (dort, wo main.py liegt).
+5. Einfuegen (Strg+V) und NUR gleichnamige DATEIEN ersetzen bestaetigen.
+   Windows fuehrt die gleichnamigen Unterordner automatisch zusammen.
+6. ForgeAI neu starten und testen:
+   erstelle prompt fuer frau im schlafzimmer erotisch
+
+Das Update umfasst 3 bestehende Python-Dateien, einen neuen Regressionstest
+und diese Anleitung. Keine Benutzerdaten, Datenbank, Einstellungen oder .git.
+
+Aenderungen:
+- Eigenstaendige kreative Prompt-Auftraege gehen in einen speziellen Prompt-Modus.
+- Keine generischen Belehrungen statt einer konkreten Ausgabe.
+- Ein neuer Prompt uebernimmt weder alte Assistenz-Ablehnungen noch unnoetige Projektdateien.
+- Referenzen auf vorherige Prompts behalten den bisherigen Chat-Verlauf.
+- Echte Dateiaenderungen behalten die Freigabe/den bisherigen Agentenpfad.
+- Das tatsaechlich gewaehlte Ollama-Modell behaelt seine eigenen Grenzen.
+
+Pruefung: 31 zielgerichtete Tests bestanden; 291 Tests in der ohne Qt
+lauffaehigen Teilsuite bestanden. Ein echter lokaler Ollama-Test am
+Benutzer-PC und die vollstaendige Qt-Suite sind hier nicht moeglich.

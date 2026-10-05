@@ -19,10 +19,8 @@ from forgeai.ai.agent_state import AgentRun, AgentState
 from forgeai.ai.agent_ui_worker import AgentRecoveryWorker, AgentVerificationWorker, AgentWorkflowWorker
 from forgeai.ai.change_actions import extract_change_previews
 from forgeai.ai.ollama_client import OllamaClient
-from forgeai.ai.prompts import SYSTEM_PROMPT, PROMPT_CREATION_INSTRUCTIONS
-from forgeai.ai.request_routing import (
-    is_project_change_request, is_creative_prompt_request, is_standalone_prompt_request,
-)
+from forgeai.ai.prompts import SYSTEM_PROMPT
+from forgeai.ai.request_routing import is_project_change_request
 from forgeai.config import Config
 from forgeai.core.ai_context import AIContextProvider
 from forgeai.core.evidence_validator import EvidenceValidator
@@ -367,17 +365,10 @@ class MainWindow(QMainWindow):
         else:
             response_format = self._action_response_format(text)
 
-        is_prompt_request = (
-            not is_analysis_request
-            and response_format is None
-            and is_creative_prompt_request(text)
-        )
         if is_analysis_request:
             system_content = SYSTEM_PROMPT + self._analysis_instructions()
         elif response_format is not None:
             system_content = SYSTEM_PROMPT + self._change_action_instructions()
-        elif is_prompt_request:
-            system_content = SYSTEM_PROMPT + "\n\n" + PROMPT_CREATION_INSTRUCTIONS
         else:
             system_content = SYSTEM_PROMPT
 
@@ -403,19 +394,14 @@ class MainWindow(QMainWindow):
             min(project_context_tokens // 2, 8_192),
         )
 
-        # Standalone creative prompts must not absorb unrelated approved source
-        # files as instructions or waste context on an active coding project.
-        if is_prompt_request and is_standalone_prompt_request(text):
-            context, included_files = "", []
-        else:
-            context, included_files = self.ai_context.build(
-                self.workspace.active_project,
-                max_context_tokens=project_context_tokens,
-                max_file_tokens=per_file_tokens,
-                exclude_noise=is_analysis_request,
-                request=text if is_analysis_request else None,
-                include_structure=is_analysis_request,
-            )
+        context, included_files = self.ai_context.build(
+            self.workspace.active_project,
+            max_context_tokens=project_context_tokens,
+            max_file_tokens=per_file_tokens,
+            exclude_noise=is_analysis_request,
+            request=text if is_analysis_request else None,
+            include_structure=is_analysis_request,
+        )
 
         self.logger.info(
             "Model %s: native_context=%s, recommended_context=%s, "
@@ -438,15 +424,7 @@ class MainWindow(QMainWindow):
             self.logger.info("Sent %s approved local files to Ollama", len(included_files))
 
         messages = [{"role": "system", "content": system_content}]
-        if is_prompt_request and is_standalone_prompt_request(text):
-            # The previous assistant may have refused this *unrelated* task.
-            # The new brief should not inherit that refusal as a few-shot example.
-            messages.append({"role": "user", "content": text})
-        else:
-            messages += [
-                {"role": row["role"], "content": row["content"]}
-                for row in self.history.messages(self.chat_id)
-            ]
+        messages += [{"role": row["role"], "content": row["content"]} for row in self.history.messages(self.chat_id)]
         self.worker = self.ollama.stream_chat(
             self.ollama_url,
             self.model,

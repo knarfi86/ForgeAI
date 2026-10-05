@@ -1,4 +1,5 @@
 import json
+import logging
 import urllib.error
 import urllib.request
 import subprocess
@@ -58,6 +59,9 @@ class OllamaStreamWorker(QThread):
 class OllamaClient:
     """Client for ForgeAI's fixed, local Ollama backend only."""
 
+    def __init__(self) -> None:
+        self.logger = logging.getLogger("forgeai.ollama")
+
     @staticmethod
     def local_url(base_url: str) -> str:
         """Return the supported local endpoint or reject every other backend."""
@@ -78,9 +82,16 @@ class OllamaClient:
 
     def load_model(self, base_url: str, model_name: str) -> dict:
         try:
-            with urllib.request.urlopen(f"{self.local_url(base_url)}/api/models/{model_name}", timeout=3) as response:
+            request = urllib.request.Request(
+                f"{self.local_url(base_url)}/api/show",
+                data=json.dumps({"model": model_name}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+
+            with urllib.request.urlopen(request, timeout=3) as response:
                 return json.load(response)
-        except (urllib.error.URLError, json.JSONDecodeError, ValueError):
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
             return {}
 
     def get_hardware_info(self) -> dict:
@@ -364,12 +375,14 @@ class OllamaClient:
                 self.logger.info("Ollama-Verbindung erfolgreich hergestellt.")
             else:
                 raise ConnectionError(f"Ungültige Antwort: {response.getcode()}")
-        except urllib.error.URLError as error:
+        except (urllib.error.URLError, ConnectionError) as error:
             self.logger.error(f"Fehler beim Herstellen der Ollama-Verbindung: {error}")
 
     def analyze_project(self, base_url: str, project_path: str) -> dict:
-        try:
-            with urllib.request.urlopen(f"{self.local_url(base_url)}/api/analyze?path={project_path}", timeout=30) as response:
-                return json.load(response)
-        except (urllib.error.URLError, json.JSONDecodeError, ValueError):
-            return {}
+        """Compatibility shim: Ollama has no project-analysis endpoint."""
+        self.local_url(base_url)
+        self.logger.info(
+            "Ollama project analysis is not supported by the local Ollama API: %s",
+            project_path,
+        )
+        return {}

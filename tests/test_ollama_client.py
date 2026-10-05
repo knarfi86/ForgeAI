@@ -1,6 +1,6 @@
 ﻿import json
+import logging
 import urllib.error
-from io import BytesIO
 from unittest.mock import Mock
 
 import pytest
@@ -63,6 +63,38 @@ def test_list_models_returns_empty_list_on_connection_error(monkeypatch):
     client = OllamaClient()
 
     assert client.list_models(Config.LOCAL_OLLAMA_URL) == []
+
+
+def test_load_model_uses_official_show_endpoint(monkeypatch):
+    response = Mock()
+    response.__enter__ = Mock(return_value=response)
+    response.__exit__ = Mock(return_value=False)
+    response.read = Mock(
+        return_value=json.dumps(
+            {
+                "model_info": {
+                    "some.arch.context_length": 131072,
+                }
+            }
+        ).encode("utf-8")
+    )
+
+    urlopen = Mock(return_value=response)
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+
+    client = OllamaClient()
+
+    assert client.load_model(Config.LOCAL_OLLAMA_URL, "model-a") == {
+        "model_info": {
+            "some.arch.context_length": 131072,
+        }
+    }
+
+    request = urlopen.call_args.args[0]
+
+    assert request.full_url == f"{Config.LOCAL_OLLAMA_URL}/api/show"
+    assert request.get_method() == "POST"
+    assert json.loads(request.data.decode("utf-8")) == {"model": "model-a"}
 
 
 def test_get_model_size_returns_matching_size(monkeypatch):
@@ -207,3 +239,35 @@ def test_generate_requires_model():
 
     with pytest.raises(ValueError, match="Kein Ollama-Modell"):
         client.generate("hello")
+
+
+def test_connect_logs_success(monkeypatch, caplog):
+    response = Mock()
+    response.getcode = Mock(return_value=200)
+
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        Mock(return_value=response),
+    )
+
+    client = OllamaClient()
+
+    with caplog.at_level(logging.INFO, logger="forgeai.ollama"):
+        client.connect(Config.LOCAL_OLLAMA_URL)
+
+    assert "Ollama-Verbindung erfolgreich hergestellt." in caplog.text
+
+
+def test_connect_logs_connection_error_without_crashing(monkeypatch, caplog):
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        Mock(side_effect=urllib.error.URLError("offline")),
+    )
+
+    client = OllamaClient()
+
+    with caplog.at_level(logging.ERROR, logger="forgeai.ollama"):
+        client.connect(Config.LOCAL_OLLAMA_URL)
+
+    assert "Fehler beim Herstellen der Ollama-Verbindung" in caplog.text
+    assert "offline" in caplog.text

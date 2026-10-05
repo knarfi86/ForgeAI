@@ -27,4 +27,5 @@ Thumbs.db
 # Test reports
 test_reports/
 
-# Test reports
+# Local/editor artifacts
+*.bak

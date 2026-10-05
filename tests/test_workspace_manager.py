@@ -240,6 +240,32 @@ def test_active_model_is_cleared_when_project_closes(
 
     assert active_manager.get_active_model() is None
 
+
+def test_analyze_with_ollama_uses_local_project_analysis(
+    active_manager: WorkspaceManager,
+    project: Path,
+    monkeypatch,
+):
+    target = project / "main.py"
+    target.write_text("class Demo: pass\n", encoding="utf-8")
+
+    def fail_if_network_analysis_is_used(*args, **kwargs):
+        raise AssertionError("Ollama has no project-analysis endpoint")
+
+    monkeypatch.setattr(
+        "forgeai.ai.ollama_client.OllamaClient.analyze_project",
+        fail_if_network_analysis_is_used,
+    )
+
+    active_manager.refresh_index()
+
+    analysis = active_manager.analyze_with_ollama("http://localhost:11434")
+
+    assert analysis["project_name"] == project.name
+    assert "main.py" in analysis["files"]
+    assert analysis["classes"]["main.py"] == ["Demo"]
+
+
 def test_ai_accessible_files_includes_recursive_directory_grants(
     active_manager: WorkspaceManager,
     project: Path,
