@@ -34,15 +34,19 @@ class AIContextProvider:
         exclude_noise: bool = False,
         request: str | None = None,
         include_structure: bool = False,
+        extra_paths: list[Path] | None = None,
     ) -> tuple[str, list[str]]:
-        """Build a bounded system-message fragment using a model-dependent token budget."""
-        if not project_path:
+        """Build bounded context from project grants plus concrete external read targets."""
+        root = self.filesystem.resolve(project_path) if project_path else None
+        paths = self._granted_files(root) if root else []
+        extra_paths = [self.filesystem.resolve(path) for path in (extra_paths or [])]
+        for extra in extra_paths:
+            if self.filesystem.is_file(extra) and extra not in paths:
+                paths.append(extra)
+        if root is None and not paths:
             return "", []
 
-        root = self.filesystem.resolve(project_path)
-        paths = self._granted_files(root)
-
-        if request:
+        if request and root is not None:
             relevant = self.relevance.find_relevant(
                 root,
                 request,
@@ -52,15 +56,16 @@ class AIContextProvider:
                 relative_path: index
                 for index, relative_path in enumerate(relevant)
             }
-            paths.sort(
-                key=lambda path: (
-                    relevance_rank.get(
-                        path.relative_to(root).as_posix(),
-                        100_000,
-                    ),
-                    path.relative_to(root).as_posix().casefold(),
-                )
-            )
+            def _relevance_key(path: Path):
+                if path == root or root in path.parents:
+                    relative = path.relative_to(root).as_posix()
+                    return (
+                        relevance_rank.get(relative, 100_000),
+                        relative.casefold(),
+                    )
+                return (200_000, str(path).casefold())
+
+            paths.sort(key=_relevance_key)
 
         max_context_chars = max(1, max_context_tokens) * self.CHARS_PER_TOKEN
         effective_file_tokens = (
@@ -71,7 +76,7 @@ class AIContextProvider:
         structure_context = ""
         used = 0
 
-        if include_structure and self.structure_provider is not None:
+        if include_structure and root is not None and self.structure_provider is not None:
             structure = self.structure_provider(root)
             structure_text = self._format_structure(structure)
 
@@ -110,12 +115,15 @@ class AIContextProvider:
                 continue
 
             if exclude_noise:
-                relative_parts = path.relative_to(root).parts
+                relative_parts = (path.relative_to(root).parts if root is not None and (path == root or root in path.parents) else path.parts)
                 if any(part in noise_directories for part in relative_parts):
                     continue
 
             content = self.filesystem.read_text(path)
-            relative = path.relative_to(root).as_posix()
+            if root is not None and (path == root or root in path.parents):
+                relative = path.relative_to(root).as_posix()
+            else:
+                relative = f"extern:{path}"
 
             chunk = (
                 f"\n\n--- Datei: {relative} ---\n"
@@ -158,13 +166,12 @@ class AIContextProvider:
             indent=2,
         )
 
-    def _granted_files(self, root: Path) -> list[Path]:
+    def _granted_files(self, root: Path | None) -> list[Path]:
+        if root is None:
+            return []
         return [
             path
             for path in self.accessible_files_provider()
             if self.filesystem.is_file(path)
-            and (
-                path == root
-                or root in path.parents
-            )
+            and (path == root or root in path.parents)
         ]

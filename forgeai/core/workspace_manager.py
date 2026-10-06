@@ -184,6 +184,118 @@ class WorkspaceManager:
 
         return result
 
+
+    def grant_external_ai_access(self, path: str | Path) -> None:
+        """Persist read-only AI access to one local file or directory.
+
+        External grants never confer project write permission.
+        """
+        target = self.filesystem.resolve(path)
+        if self.filesystem.is_directory(target):
+            grant_type = "directory"
+        elif self.filesystem.is_file(target):
+            grant_type = "file"
+        else:
+            raise FileNotFoundError(target)
+        self.database.execute(
+            "INSERT INTO ai_external_access_grants(absolute_path,grant_type) VALUES(?,?) "
+            "ON CONFLICT(absolute_path) DO UPDATE SET grant_type=excluded.grant_type",
+            (str(target), grant_type),
+        )
+        self.logger.info("Granted external AI read access to %s", target)
+
+    def revoke_external_ai_access(self, path: str | Path) -> None:
+        target = self.filesystem.resolve(path)
+        self.database.execute(
+            "DELETE FROM ai_external_access_grants WHERE absolute_path=?",
+            (str(target),),
+        )
+        self.logger.info("Revoked external AI read access to %s", target)
+
+    def external_ai_grants(self):
+        return self.database.fetchall(
+            "SELECT absolute_path, grant_type, created_at "
+            "FROM ai_external_access_grants ORDER BY created_at, absolute_path"
+        )
+
+    def set_global_read_access(self, enabled: bool) -> None:
+        """Allow concrete local read requests without per-path approval.
+
+        This setting never grants write access and never triggers disk-wide scans.
+        """
+        self.database.execute(
+            "INSERT INTO settings(key,value) VALUES('ai_global_read_access',?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            ("true" if enabled else "false",),
+        )
+        self.logger.info("Global AI read access set to %s", enabled)
+
+    def global_read_access_enabled(self) -> bool:
+        row = self.database.fetchone(
+            "SELECT value FROM settings WHERE key='ai_global_read_access'"
+        )
+        return bool(row and str(row["value"]).casefold() in {"1", "true", "yes", "on"})
+
+    def is_read_path_granted(self, path: str | Path) -> bool:
+        """Check project, external or global read permission for an existing path."""
+        target = self.filesystem.resolve(path)
+        if not self.filesystem.is_file(target) and not self.filesystem.is_directory(target):
+            return False
+
+        if self.active_project and (target == self.active_project or self.active_project in target.parents):
+            if self.is_ai_path_granted(target):
+                return True
+
+        if self.global_read_access_enabled():
+            return True
+
+        for grant in self.external_ai_grants():
+            granted = self.filesystem.resolve(grant["absolute_path"])
+            if grant["grant_type"] == "file" and target == granted:
+                return True
+            if grant["grant_type"] == "directory" and (target == granted or granted in target.parents):
+                return True
+        return False
+
+    def grant_read_access(self, path: str | Path) -> None:
+        """Grant read access in the narrowest appropriate scope."""
+        target = self.filesystem.resolve(path)
+        if self.active_project and (target == self.active_project or self.active_project in target.parents):
+            self.grant_ai_access(target)
+            return
+        self.grant_external_ai_access(target)
+
+    def expand_read_targets(self, paths: list[str | Path]) -> list[Path]:
+        """Expand concrete, already-authorized read targets into files for context."""
+        result: list[Path] = []
+        seen: set[Path] = set()
+        for raw in paths:
+            target = self.filesystem.resolve(raw)
+            if not self.is_read_path_granted(target):
+                continue
+            if self.filesystem.is_file(target):
+                candidates = [target]
+            elif self.filesystem.is_directory(target):
+                try:
+                    candidates = [
+                        directory / name
+                        for directory, _, names in self.filesystem.walk(
+                            target,
+                            FileIndexer.IGNORED_DIRECTORIES,
+                        )
+                        for name in names
+                    ]
+                except (FileNotFoundError, PermissionError, OSError):
+                    candidates = []
+            else:
+                candidates = []
+            for candidate in candidates:
+                candidate = self.filesystem.resolve(candidate)
+                if candidate not in seen and self.filesystem.is_file(candidate):
+                    seen.add(candidate)
+                    result.append(candidate)
+        return result
+
     def grant_session_access(self, path: str | Path) -> None:
         """Grant temporary access for this session only (until project closes)."""
         if not self.active_project:

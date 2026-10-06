@@ -5,6 +5,8 @@ from typing import Any
 
 from .agent_contracts import AgentPlan, ReviewDecision, ReviewResult
 from .model_router import ModelRouter
+from .prompt_core import compose_system_prompt
+from .prompt_roles import load_role_prompt
 
 
 class AgentReviewer:
@@ -62,6 +64,7 @@ class AgentReviewer:
         plan: AgentPlan,
         project_context: str,
     ) -> str:
+        role_prompt = load_role_prompt("plan_reviewer")
         plan_json = json.dumps(
             {
                 "summary": plan.summary,
@@ -72,34 +75,15 @@ class AgentReviewer:
             indent=2,
         )
 
-        return "\n".join(
+        review_input = "\n".join(
             [
-                "Du bist der kritische Review-Agent von ForgeAI.",
-                "",
-                "Prüfe den folgenden Agentenplan.",
-                "Du darfst keine Dateien verändern und keine Änderungen ausführen.",
-                "",
-                "Bewerte insbesondere:",
-                "- fachliche Korrektheit",
-                "- technische Plausibilität",
-                "- Architekturverträglichkeit",
-                "- mögliche Seiteneffekte",
-                "- Vollständigkeit",
-                "- Sicherheit",
-                "- Testbarkeit",
-                "",
-                "Belegpflicht für Review-Feststellungen:",
-                "- Nenne zu jedem Einwand den konkreten Fehler im Plan oder eine explizite Anforderung aus PROJECT_CONTEXT.",
-                "- Erfinde keine generelle ForgeAI-Inhaltsrichtlinie, keinen Verbotskatalog und keine zusätzlichen Benutzeranforderungen.",
-                "- Insbesondere sind 'erotisch', 'sinnlich' und 'explizit' keine austauschbaren Begriffe.",
-                "- Eine fehlende Sicherheitsanforderung darf nur beanstandet werden, wenn sie sich aus einer tatsächlichen Anforderung oder einem konkret belegbaren Risiko ergibt.",
-                "- Die Sicherheitsgrenzen des verwendeten Modells bleiben unberührt; behaupte aber keine zusätzliche ForgeAI-Policy ohne belegte Quelle.",
-                "- Wenn keine konkrete Regel oder kein konkretes Problem belegt werden kann, erfinde keinen Ablehnungsgrund.",
-                "- 'reject' erfordert einen konkret begründeten, nicht sinnvoll korrigierbaren Planfehler. Bloße Vermutungen reichen nicht.",
+                "## Current Review Input",
                 "",
                 f"PROJECT_CONTEXT:\n{project_context}",
                 "",
                 f"AGENT_PLAN:\n{plan_json}",
+                "",
+                "## Review Contract",
                 "",
                 "Antworte ausschließlich als gültiges JSON.",
                 "Das JSON muss exakt diese Struktur besitzen:",
@@ -111,15 +95,11 @@ class AgentReviewer:
                 "}",
                 "",
                 'decision darf ausschließlich "approve", "revise" oder "reject" sein.',
-                "",
-                "Entscheidungsregeln:",
-                '- "approve": Der Plan ist fachlich und technisch plausibel, ausreichend vollständig und ohne wesentliche erkennbare Probleme ausführbar.',
-                '- "revise": Der Plan enthält konkrete technische, architektonische, fachliche, sicherheitsrelevante, testbezogene oder vollständigkeitsbezogene Probleme, die durch eine Überarbeitung des Plans korrigiert werden können.',
-                '- "reject": Der vorgeschlagene Ansatz ist grundsätzlich ungeeignet, widersprüchlich oder nicht sinnvoll ausführbar. Verwende "reject" nicht für normale technische Fehler oder fehlende Details, die der Planner konkret korrigieren kann.',
-                "",
-                'Wenn konkrete Korrekturen möglich sind, verwende bevorzugt "revise" und beschreibe sie nachvollziehbar in findings und required_changes.',
+                "Gib keine zusätzlichen Felder und keinen Text außerhalb des JSON-Objekts aus.",
             ]
         )
+
+        return compose_system_prompt(role_prompt, review_input)
 
     @staticmethod
     def _parse_response(response: str) -> ReviewResult:

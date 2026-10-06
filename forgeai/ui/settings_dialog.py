@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QSpinBox
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel, QLineEdit, QSpinBox
 
 from forgeai.config import Config
 from forgeai.ai.ollama_client import OllamaClient
@@ -22,10 +22,17 @@ class SettingsDialog(QDialog):
         if models:
             self.model_selector = ModelSelector(models, parent=self)
             self.model_selector.model_selected.connect(self._on_model_changed)
-            layout.addRow("Modell", self.model_selector)
+            self.model_selector.model_combo.setCurrentText(model)
+            layout.addRow("Primärmodell", self.model_selector)
         else:
             self.model_selector = None
-            layout.addRow("Keine verfügbaren Modelle")
+            layout.addRow("Primärmodell", QLabel("Keine verfügbaren Modelle"))
+
+        strategy = QLabel(
+            "Primärmodell bevorzugen; Spezialisten nur bei explizitem Bedarf."
+        )
+        strategy.setWordWrap(True)
+        layout.addRow("Modellstrategie", strategy)
 
         # Theme
         self.theme = QComboBox()

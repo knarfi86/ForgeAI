@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
@@ -158,6 +158,18 @@ class RunReality:
     history: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     revision_context: list[dict[str, Any]] = field(default_factory=list)
+    verification_history: list[dict[str, Any]] = field(default_factory=list)
+    repair_history: list[dict[str, Any]] = field(default_factory=list)
+    stagnation_status: dict[str, Any] = field(default_factory=dict)
+    recovery_escalation: dict[str, Any] = field(default_factory=dict)
+    recovery_escalation_history: list[dict[str, Any]] = field(default_factory=list)
+    completion_evidence: list[dict[str, Any]] = field(default_factory=list)
+    completion_decision: dict[str, Any] = field(default_factory=dict)
+    completion_history: list[dict[str, Any]] = field(default_factory=list)
+    required_verification_profiles: list[dict[str, Any]] = field(default_factory=list)
+    verification_reports: list[dict[str, Any]] = field(default_factory=list)
+    fact_history: list[dict[str, Any]] = field(default_factory=list)
+    capability_plans: list[dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def from_agent_run(
@@ -185,6 +197,22 @@ class RunReality:
             history=[dict(entry) for entry in run.history],
             metadata=dict(run.metadata),
             revision_context=[dict(entry) for entry in run.revision_context],
+            verification_history=[asdict(entry) for entry in run.verification_history],
+            repair_history=[asdict(entry) for entry in run.repair_history],
+            stagnation_status=asdict(run.stagnation_status),
+            recovery_escalation=asdict(run.recovery_escalation),
+            recovery_escalation_history=[
+                asdict(entry) for entry in run.recovery_escalation_history
+            ],
+            completion_evidence=[asdict(entry) for entry in run.completion_evidence],
+            completion_decision=asdict(run.completion_decision),
+            completion_history=[asdict(entry) for entry in run.completion_history],
+            required_verification_profiles=[
+                asdict(entry) for entry in run.required_verification_profiles
+            ],
+            verification_reports=[asdict(entry) for entry in run.verification_reports],
+            fact_history=[asdict(entry) for entry in run.fact_history],
+            capability_plans=[asdict(entry) for entry in run.capability_plans],
         )
 
 

@@ -76,6 +76,12 @@ class WorkspaceDatabase(Database):
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(project_path, relative_path)
             );
+            CREATE TABLE IF NOT EXISTS ai_external_access_grants (
+                id INTEGER PRIMARY KEY,
+                absolute_path TEXT NOT NULL UNIQUE,
+                grant_type TEXT NOT NULL CHECK(grant_type IN ('file', 'directory')),
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
             """
         )
         self._ensure_column("project_files", "modified_at", "TEXT NOT NULL DEFAULT ''")

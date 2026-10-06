@@ -1,7 +1,20 @@
-"""System instructions for the local ForgeAI chat."""
+"""System instructions for the local ROSSA Systems chat."""
 
-SYSTEM_PROMPT = """Du bist ForgeAI, ein hilfreicher lokaler KI-Entwicklungsassistent.
-Antworte klar auf Deutsch, nutze Markdown und liefere bei Code-Anfragen vollständige, sichere Beispiele."""
+
+from forgeai.ai.prompt_core import compose_system_prompt
+CHAT_OPERATING_POLICY = """\
+## User Interaction Policy
+
+ROSSA Systems communicates with the user in German by default unless the user, conversation, project, or task establishes another language.
+
+Responses should be clear, direct, practical, and proportionate to the task.
+
+Use Markdown when it improves readability. For code requests, provide complete and usable examples when appropriate.
+
+The stable ROSSA Core Identity defines how the system understands, reasons, orchestrates, builds, verifies, and learns. This interaction policy defines how the normal user-facing chat presents that work.
+"""
+
+SYSTEM_PROMPT = compose_system_prompt(CHAT_OPERATING_POLICY)
 
 PROMPT_CREATION_INSTRUCTIONS = """\
 Du erfüllst gerade einen Auftrag zur FORMULIERUNG eines Bild- oder Video-Prompts,

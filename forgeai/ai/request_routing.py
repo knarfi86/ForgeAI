@@ -95,3 +95,56 @@ def is_creative_prompt_request(request: str) -> bool:
 def is_standalone_prompt_request(request: str) -> bool:
     """New prompt with no dependency on an earlier chat turn."""
     return is_creative_prompt_request(request) and not _PRIOR_PROMPT_REFERENCE.search(request)
+
+
+_LOCAL_READ_REQUEST = re.compile(
+    r"\b(?:lies|lese|öffne|oeffne|analysiere|analysier|untersuche|prüfe|pruefe|"
+    r"überprüfe|ueberpruefe|zeige|erkläre|erklaere|fasse|durchsuche)\b"
+    r"[\s\S]{0,100}?\b(?:datei|dateien|ordner|verzeichnis|pfad|projekt|log|json|"
+    r"quellcode|code|inhalt)\b",
+    re.IGNORECASE,
+)
+
+_QUOTED_WINDOWS_PATH = re.compile(
+    r"[\"']([A-Za-z]:[\\/][^\"']+)[\"']",
+    re.IGNORECASE,
+)
+
+_BARE_WINDOWS_PATH = re.compile(
+    r"(?<![A-Za-z0-9_])([A-Za-z]:[\\/][^\s,;]+)",
+    re.IGNORECASE,
+)
+
+
+def is_local_read_request(request: str) -> bool:
+    """Return True when the user explicitly asks Forge to inspect local content.
+
+    General conversation and knowledge questions must stay projectless-capable.
+    """
+    normalized = request.strip()
+    if not normalized:
+        return False
+    return bool(
+        _LOCAL_READ_REQUEST.search(normalized)
+        or _QUOTED_WINDOWS_PATH.search(normalized)
+        or _BARE_WINDOWS_PATH.search(normalized)
+    )
+
+
+def extract_local_paths(request: str) -> list[str]:
+    """Extract explicit absolute Windows paths without touching the filesystem."""
+    matches: list[tuple[int, str]] = []
+    quoted_spans: list[tuple[int, int]] = []
+    for match in _QUOTED_WINDOWS_PATH.finditer(request):
+        quoted_spans.append(match.span())
+        matches.append((match.start(), match.group(1)))
+    for match in _BARE_WINDOWS_PATH.finditer(request):
+        if any(start <= match.start() < end for start, end in quoted_spans):
+            continue
+        matches.append((match.start(), match.group(1)))
+    paths: list[str] = []
+    for _, raw in sorted(matches, key=lambda item: item[0]):
+        value = raw.strip().rstrip(".,;:!?)']}")
+        if value and value not in paths:
+            paths.append(value)
+    return paths

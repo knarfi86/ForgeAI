@@ -217,3 +217,77 @@ Verantwortlichkeiten.
 
 Die Rundengrenzen bleiben konfigurierbar und werden nicht fest in einzelne
 Agent-Komponenten eingebaut.
+
+<!-- FORGE:CORE_CAPABILITY_ROADMAP:START -->
+## Core-first Capability-Architektur
+
+Die weitere Entwicklung folgt dem Prinzip: zuerst allgemeine Autonomie und
+nachweisbare Wahrheit im Core absichern, anschließend Spezialfähigkeiten als
+aktivierbare Plugins ergänzen.
+
+### Core vor Spezialfähigkeiten
+
+- [x] RepairHistory
+- [x] StagnationDetector
+- [x] RecoveryEscalation
+- [x] CompletionGate
+- [x] generisches Verification-Framework
+- [x] Fact-/Evidence-Provider mit Freshness-Regeln
+- [x] PluginManager und CapabilityRegistry
+- [x] serielle Ressourcenkoordination als sichere Basis
+- [ ] erweiterte Ressourcenplanung / spätere Modellkoordination
+
+### Danach schrittweise Capability-Plugins
+
+- [x] Python als erste Referenz-Capability
+- [x] Primary-first Modellpolicy für alle Agentrollen
+- [ ] Specialist-Auswahl anhand realer Capability-/Plugin-Anforderungen prüfen
+- [ ] Lua
+- [ ] C#
+- [ ] C++
+- [ ] GameDev-Orchestrierung und Engine-Adapter
+- [ ] Bildgenerierung und Bildbearbeitung
+- [ ] Videoerzeugung und Videobearbeitung
+- [ ] Hunyuan3D und Blender
+- [ ] Audio, TTS und Audiobearbeitung
+
+Plugins liefern Fachwerkzeuge und Verification-Profile. Sie umgehen weder
+Authority noch Evidence, Recovery oder CompletionGate.
+
+Architekturdetails: `docs/CORE_PRINCIPLES.md` und
+`docs/CAPABILITY_PLUGINS.md`.
+<!-- FORGE:CORE_CAPABILITY_ROADMAP:END -->
+
+<!-- FORGE:PROJECTLESS_CHAT_ACCESS:START -->
+## Projektloser Chat und Read-Authority
+
+- [x] normaler Chat ohne geöffnetes Projekt
+- [x] Projektpflicht erst bei Datei-/Projektänderungen
+- [x] UI-Auswahl `Projekt wählen` / `Neues Projekt erstellen` bei Schreibauftrag
+- [x] persistente externe Dateifreigaben
+- [x] persistente externe Ordnerfreigaben
+- [x] expliziter globaler read-only Zugriff
+- [x] UI `Werkzeuge -> KI-Lesefreigaben`
+- [x] externe Inhalte nur requestbezogen in den Modellkontext aufnehmen
+- [x] globale Lesefreigabe erweitert niemals den Projekt-Schreibroot
+
+Die Primary-first Modellpolicy ist umgesetzt; automatische Specialist-Auswahl und Benchmarks bleiben separate Folgeschritte.
+<!-- FORGE:PROJECTLESS_CHAT_ACCESS:END -->
+
+<!-- FORGE:MODEL_POLICY:START -->
+## Modellstrategie
+
+- [x] `ModelProfile` als modellunabhängiges Metadatenformat
+- [x] `PrimaryModelPolicy`: Primärmodell über Agentrollen hinweg bevorzugen
+- [x] `ModelAdapter`-Vertrag mit unverändertem Identity-Adapter
+- [x] bestehende AgentWorker auf Primary-first-Routing umstellen
+- [x] UI-Bezeichnung `Primärmodell`
+- [x] explizite Legacy-/Manuell-Routen weiter unterstützen
+- [ ] reale Modellbenchmarks in Forge
+- [ ] Specialist-Auswahl anhand nachgewiesener Capability-Anforderung
+- [ ] Modell-Eskalation nur bei belegter Modellstagnation/-ungeeignetheit
+- [ ] Performance-/VRAM-/Kontext-Metriken in Modellentscheidungen einbeziehen
+
+Grundregel: Forge wird für eindeutige Contracts und überprüfbare Facts optimiert,
+nicht für die Macken eines einzelnen kleinen oder großen Modells.
+<!-- FORGE:MODEL_POLICY:END -->

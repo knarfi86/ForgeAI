@@ -72,6 +72,7 @@ def test_actual_send_message_sends_fresh_prompt_without_old_refusal_or_project_f
         'PROMPT_CREATION_INSTRUCTIONS': PROMPT_CREATION_INSTRUCTIONS,
         'is_creative_prompt_request': is_creative_prompt_request,
         'is_standalone_prompt_request': is_standalone_prompt_request,
+        'is_local_read_request': __import__('forgeai.ai.request_routing', fromlist=['is_local_read_request']).is_local_read_request,
     }
     exec(compile(ast.fix_missing_locations(harness_module), str(path), 'exec'), ns)
     window = ns['Harness']()

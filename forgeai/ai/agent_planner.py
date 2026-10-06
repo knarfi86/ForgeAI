@@ -6,6 +6,8 @@ from typing import Any
 from .agent_contracts import AgentPlan, AgentTask
 from .external_planner import ExternalPlanner
 from .model_router import ModelRouter
+from .prompt_roles import load_role_prompt
+from .prompt_core import compose_system_prompt
 
 
 class AgentPlanner:
@@ -105,11 +107,10 @@ class AgentPlanner:
         external_context: str,
         revision_context: list[dict[str, Any]],
     ) -> str:
+        role_prompt = load_role_prompt("project_planner")
+
         sections = [
-            "Du bist der Planungsagent von ForgeAI.",
-            "",
-            "Erstelle einen konkreten, strukturierten Plan für die folgende Aufgabe.",
-            "Du darfst keine Dateien selbst verändern.",
+            "## Current Planning Input",
             "",
             f"TASK_ID: {task.task_id}",
             f"USER_REQUEST:\n{task.user_request}",
@@ -141,13 +142,15 @@ class AgentPlanner:
                     ),
                     "",
                     "Überarbeite den Plan anhand der bisherigen Review-Ergebnisse.",
-                    "Berücksichtige insbesondere alle findings und required_changes.",
-                    "Ignoriere keine als notwendig markierte Änderung.",
+                    "Berücksichtige insbesondere alle evidenzbasierten findings und required_changes.",
+                    "Ignoriere keine als notwendig markierte Änderung ohne nachvollziehbare Begründung.",
                 ]
             )
 
         sections.extend(
             [
+                "",
+                "## Planning Contract",
                 "",
                 "Antworte ausschließlich als gültiges JSON.",
                 "Das JSON muss exakt diese Struktur besitzen:",
@@ -162,10 +165,12 @@ class AgentPlanner:
                 "  ],",
                 '  "rationale": "Begründung des gewählten Ansatzes"',
                 "}",
+                "",
+                "Gib keine zusätzlichen Felder und keinen Text außerhalb des JSON-Objekts aus.",
             ]
         )
 
-        return "\n".join(sections)
+        return compose_system_prompt(role_prompt, "\n".join(sections))
 
     @staticmethod
     def _parse_response(response: str) -> AgentPlan:

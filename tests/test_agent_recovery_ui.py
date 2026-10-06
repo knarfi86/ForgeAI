@@ -296,3 +296,46 @@ def test_recovery_context_failure_stops_without_using_stale_context(monkeypatch)
     assert window._agent_project_context == ""
     assert run.state == AgentState.FAILED
     assert window.input_bar.busy_values[-1] is False
+
+
+def test_verification_stagnation_uses_escalation_status():
+    class _FakeOrchestrator:
+        run = SimpleNamespace(
+            recovery_escalation=SimpleNamespace(active=True)
+        )
+
+        def handle_verification_result(self, success, test_output):
+            assert success is False
+            return AgentState.ANALYZING
+
+    window = _make_window(_FakeOrchestrator())
+    calls = []
+    window._start_agent_recovery = calls.append
+
+    window._agent_verification_finished(False, 1, "same failure")
+
+    assert calls == ["same failure"]
+    assert window.statuses[-1] == "Stagnation erkannt, Recovery wird erweitert"
+
+
+def test_verification_failure_stops_when_recovery_budget_is_exhausted():
+    class _FakeOrchestrator:
+        run = SimpleNamespace(
+            recovery_escalation=SimpleNamespace(active=True)
+        )
+
+        def handle_verification_result(self, success, test_output):
+            assert success is False
+            return AgentState.FAILED
+
+    window = _make_window(_FakeOrchestrator())
+    calls = []
+    window._start_agent_recovery = calls.append
+
+    window._agent_verification_finished(False, 1, "final failure")
+
+    assert calls == []
+    assert window.input_bar.busy_values[-1] is False
+    assert window.statuses[-1] == (
+        "Recovery gestoppt: Reparaturbudget erschöpft"
+    )

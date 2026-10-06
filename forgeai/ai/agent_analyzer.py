@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
@@ -6,6 +6,9 @@ from typing import Any
 
 from .agent_contracts import AgentPlan, AgentTask
 from .model_router import ModelRouter
+from .prompt_roles import load_role_prompt
+from .prompt_core import compose_system_prompt
+from forgeai.core.recovery_escalation import RecoveryEscalationDecision
 
 
 @dataclass
@@ -36,12 +39,14 @@ class AgentAnalyzer:
         project_context: str = "",
         *,
         current_plan: AgentPlan | None = None,
+        recovery_escalation: RecoveryEscalationDecision | None = None,
     ) -> RepairAnalysis:
         prompt = self._build_prompt(
             task=task,
             test_output=test_output,
             project_context=project_context,
             current_plan=current_plan,
+            recovery_escalation=recovery_escalation,
         )
 
         response = self.model_router.generate(
@@ -58,6 +63,7 @@ class AgentAnalyzer:
         test_output: str,
         project_context: str,
         current_plan: AgentPlan | None,
+        recovery_escalation: RecoveryEscalationDecision | None = None,
     ) -> str:
         plan_text = "Kein aktueller Agentenplan vorhanden."
 
@@ -68,12 +74,19 @@ class AgentAnalyzer:
                 f"Begründung: {current_plan.rationale}"
             )
 
-        return "\n".join(
+        escalation_text = "Keine aktive Recovery-Eskalation."
+        if recovery_escalation is not None and recovery_escalation.active:
+            escalation_text = json.dumps(
+                recovery_escalation.as_prompt_context(),
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        role_prompt = load_role_prompt("repair_analyzer")
+
+        analysis_input = "\n".join(
             [
-                "Du bist der Analyse-Agent von ForgeAI.",
-                "",
-                "Analysiere einen fehlgeschlagenen Verifikationslauf.",
-                "Du darfst keine Dateien verändern und keine Änderungen ausführen.",
+                "## Current Analysis Input",
                 "",
                 f"TASK_ID: {task.task_id}",
                 f"USER_REQUEST:\n{task.user_request}",
@@ -84,22 +97,28 @@ class AgentAnalyzer:
                 "",
                 f"TEST_OUTPUT:\n{test_output}",
                 "",
-                "Ermittle:",
-                "- die wichtigsten tatsächlichen Fehler",
-                "- die wahrscheinlichste Ursache",
-                "- konkrete Anforderungen für die Reparatur",
-                "- welche Informationen noch fehlen, falls die Ursache nicht sicher bestimmbar ist",
+                f"RECOVERY_ESCALATION:\n{escalation_text}",
+                "",
+                "## Analysis Contract",
+                "",
+                "Analysiere den fehlgeschlagenen Verifikationslauf anhand der vorhandenen Evidenz.",
+                "Bei aktiver Recovery-Eskalation gelten die dort angegebenen deterministischen Vorgaben.",
+                "Wiederhole insbesondere nicht bloß die zuvor stagnierende Zielstrategie.",
                 "",
                 "Antworte ausschließlich als gültiges JSON.",
                 "Verwende exakt diese Struktur:",
                 "{",
                 '  "summary": "Kurze Zusammenfassung des Problems",',
-                '  "findings": ["Konkreter Befund"],',
-                '  "root_cause": "Wahrscheinliche Ursache",',
-                '  "repair_requirements": ["Konkrete Reparaturanforderung"]',
+                '  "findings": ["Konkreter evidenzbasierter Befund"],',
+                '  "root_cause": "Wahrscheinlichste Ursache oder explizite Unsicherheit",',
+                '  "repair_requirements": ["Konkrete Anforderung an eine erfolgreiche Reparatur"]',
                 "}",
+                "",
+                "Gib keine zusätzlichen Felder und keinen Text außerhalb des JSON-Objekts aus.",
             ]
         )
+
+        return compose_system_prompt(role_prompt, analysis_input)
 
     @staticmethod
     def _parse_response(response: str) -> RepairAnalysis:

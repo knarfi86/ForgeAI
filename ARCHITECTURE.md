@@ -427,40 +427,199 @@ Die erste technische Implementierung befindet sich in
 
 #### Aktuell betroffene Dateien
 
-- `forgeai/ai/agent_orchestrator.py`
-- `forgeai/ai/agent_state.py`
-- `forgeai/ui/main_window.py`
-- `tests/test_agent_recovery_ui.py`
-- `ForgeAI_CoreFoundation_Update.zip`
-- `ForgeAI_CoreFoundation_Update/INSTALL.cmd`
-- `ForgeAI_CoreFoundation_Update/INSTALL.ps1`
-- `ForgeAI_CoreFoundation_Update/LIESMICH.txt`
-- `ForgeAI_CoreFoundation_Update/PRUEFUNG.txt`
-- `ForgeAI_CoreFoundation_Update/changes.patch`
-- `ForgeAI_CoreFoundation_Update/install.py`
-- `ForgeAI_CoreFoundation_Update/manifest.json`
-- `ForgeAI_CoreFoundation_Update/payload/ARCHITECTURE.md`
-- `ForgeAI_CoreFoundation_Update/payload/docs/CURRENT_STATE.md`
-- `ForgeAI_CoreFoundation_Update/payload/docs/RECOVERY_FOUNDATION.md`
-- `ForgeAI_CoreFoundation_Update/payload/forgeai/ai/agent_orchestrator.py`
-- `ForgeAI_CoreFoundation_Update/payload/forgeai/ai/agent_state.py`
-- `ForgeAI_CoreFoundation_Update/payload/forgeai/core/failure_fingerprint.py`
-- `ForgeAI_CoreFoundation_Update/payload/forgeai/ui/main_window.py`
-- `ForgeAI_CoreFoundation_Update/payload/tests/test_agent_recovery_ui.py`
-- `ForgeAI_CoreFoundation_Update/payload/tests/test_failure_fingerprint.py`
-- `ForgeAI_CoreFoundation_Update/payload/tests/test_recovery_foundation.py`
+- `ROADMAP.md`
 - `docs/RECOVERY_FOUNDATION.md`
-- `forgeai/core/failure_fingerprint.py`
-- `tests/test_failure_fingerprint.py`
-- `tests/test_recovery_foundation.py`
+- `forgeai/ai/agent_analyzer.py`
+- `forgeai/ai/agent_orchestrator.py`
+- `forgeai/ai/agent_planner.py`
+- `forgeai/ai/agent_repairer.py`
+- `forgeai/ai/agent_reviewer.py`
+- `forgeai/ai/agent_state.py`
+- `forgeai/ai/agent_ui_worker.py`
+- `forgeai/ai/model_router.py`
+- `forgeai/ai/prompts.py`
+- `forgeai/ai/request_routing.py`
+- `forgeai/core/agent_reality.py`
+- `forgeai/core/ai_context.py`
+- `forgeai/core/workspace_database.py`
+- `forgeai/core/workspace_manager.py`
+- `forgeai/ui/main_window.py`
+- `forgeai/ui/settings_dialog.py`
+- `tests/core/test_run_reality_projection.py`
+- `tests/test_agent_recovery_ui.py`
+- `tests/test_agent_reviewer.py`
+- `tests/test_agent_state.py`
+- `tests/test_model_router.py`
+- `tests/test_prompt_creation.py`
+- `.forge_patch_backups/plugin_capability_20261005-195758/ARCHITECTURE.md`
+- `.forge_patch_backups/plugin_capability_20261005-195758/ROADMAP.md`
+- `.forge_patch_backups/plugin_capability_20261005-195758/docs/CAPABILITY_PLUGINS.md`
+- `.forge_patch_backups/plugin_capability_20261005-195758/docs/CURRENT_STATE.md`
+- `.forge_patch_backups/plugin_capability_20261005-195758/forgeai/ai/agent_state.py`
+- `.forge_patch_backups/plugin_capability_20261005-195758/forgeai/core/agent_reality.py`
+- `.forge_patch_backups/plugin_capability_20261005-195758/forgeai/ui/main_window.py`
+- `.forge_patch_backups/primary_model_policy_20261005-222719/ARCHITECTURE.md`
+- `.forge_patch_backups/primary_model_policy_20261005-222719/ROADMAP.md`
+- `.forge_patch_backups/primary_model_policy_20261005-222719/docs/CAPABILITY_PLUGINS.md`
+- `.forge_patch_backups/primary_model_policy_20261005-222719/docs/CURRENT_STATE.md`
+- `.forge_patch_backups/primary_model_policy_20261005-222719/docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
+- `.forge_patch_backups/primary_model_policy_20261005-222719/docs/PYTHON_PLUGIN.md`
+- `.forge_patch_backups/primary_model_policy_20261005-222719/forgeai/ai/agent_ui_worker.py`
+- `.forge_patch_backups/primary_model_policy_20261005-222719/forgeai/ai/model_router.py`
+- `.forge_patch_backups/primary_model_policy_20261005-222719/forgeai/ui/main_window.py`
+- `.forge_patch_backups/primary_model_policy_20261005-222719/forgeai/ui/settings_dialog.py`
+- `.forge_patch_backups/primary_model_policy_20261005-222719/tests/test_model_router.py`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/ARCHITECTURE.md`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/ROADMAP.md`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/docs/CAPABILITY_PLUGINS.md`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/docs/CURRENT_STATE.md`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/docs/MODEL_POLICY.md`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/docs/PYTHON_PLUGIN.md`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/forgeai/ai/agent_ui_worker.py`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/forgeai/ai/model_policy.py`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/forgeai/ai/model_router.py`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/forgeai/ui/main_window.py`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/forgeai/ui/settings_dialog.py`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/tests/test_model_policy.py`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/tests/test_model_policy_ui.py`
+- `.forge_patch_backups/primary_model_policy_20261005-222754/tests/test_model_router.py`
+- `.forge_patch_backups/primary_model_policy_ui_fix_20261005-223712/tests/test_model_policy_ui.py`
+- `.forge_patch_backups/projectless_chat_access_20261005-211638/ARCHITECTURE.md`
+- `.forge_patch_backups/projectless_chat_access_20261005-211638/ROADMAP.md`
+- `.forge_patch_backups/projectless_chat_access_20261005-211638/docs/CURRENT_STATE.md`
+- `.forge_patch_backups/projectless_chat_access_20261005-211638/forgeai/ai/request_routing.py`
+- `.forge_patch_backups/projectless_chat_access_20261005-211638/forgeai/core/ai_context.py`
+- `.forge_patch_backups/projectless_chat_access_20261005-211638/forgeai/core/workspace_database.py`
+- `.forge_patch_backups/projectless_chat_access_20261005-211638/forgeai/core/workspace_manager.py`
+- `.forge_patch_backups/projectless_chat_access_20261005-211638/forgeai/ui/main_window.py`
+- `.forge_patch_backups/python_plugin_20261005-204436/ARCHITECTURE.md`
+- `.forge_patch_backups/python_plugin_20261005-204436/ROADMAP.md`
+- `.forge_patch_backups/python_plugin_20261005-204436/docs/CAPABILITY_PLUGINS.md`
+- `.forge_patch_backups/python_plugin_20261005-204436/docs/CURRENT_STATE.md`
+- `.forge_patch_backups/python_plugin_20261005-204436/docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
+- `.forge_patch_backups/python_plugin_20261005-204436/forgeai/core/plugin_manager.py`
+- `.forge_patch_backups/python_plugin_20261005-204436/forgeai/plugins/__init__.py`
+- `.forge_patch_backups/python_plugin_20261005-204436/forgeai/ui/capabilities_dialog.py`
+- `.forge_patch_backups/python_plugin_20261005-204436/tests/test_capabilities_dialog.py`
+- `.forgeai_patch_backups/completion-gate-2026-10-05/20261005-184549/ARCHITECTURE.md`
+- `.forgeai_patch_backups/completion-gate-2026-10-05/20261005-184549/ROADMAP.md`
+- `.forgeai_patch_backups/completion-gate-2026-10-05/20261005-184549/docs/CAPABILITY_PLUGINS.md`
+- `.forgeai_patch_backups/completion-gate-2026-10-05/20261005-184549/docs/CORE_PRINCIPLES.md`
+- `.forgeai_patch_backups/completion-gate-2026-10-05/20261005-184549/docs/CURRENT_STATE.md`
+- `.forgeai_patch_backups/completion-gate-2026-10-05/20261005-184549/docs/RECOVERY_FOUNDATION.md`
+- `.forgeai_patch_backups/completion-gate-2026-10-05/20261005-184549/forgeai/ai/agent_orchestrator.py`
+- `.forgeai_patch_backups/completion-gate-2026-10-05/20261005-184549/forgeai/ai/agent_state.py`
+- `.forgeai_patch_backups/completion-gate-2026-10-05/20261005-184549/forgeai/core/agent_reality.py`
+- `.forgeai_patch_backups/completion-gate-2026-10-05/20261005-184549/forgeai/ui/main_window.py`
+- `.forgeai_patch_backups/completion-gate-2026-10-05/20261005-184549/tests/core/test_run_reality_projection.py`
+- `.forgeai_patch_backups/completion-gate-2026-10-05/20261005-184549/tests/test_agent_state.py`
+- `.forgeai_patch_backups/fact-evidence-provider-20261005/20261005-191422/ARCHITECTURE.md`
+- `.forgeai_patch_backups/fact-evidence-provider-20261005/20261005-191422/ROADMAP.md`
+- `.forgeai_patch_backups/fact-evidence-provider-20261005/20261005-191422/docs/CORE_PRINCIPLES.md`
+- `.forgeai_patch_backups/fact-evidence-provider-20261005/20261005-191422/docs/CURRENT_STATE.md`
+- `.forgeai_patch_backups/fact-evidence-provider-20261005/20261005-191422/docs/VERIFICATION_FRAMEWORK.md`
+- `.forgeai_patch_backups/fact-evidence-provider-20261005/20261005-191422/forgeai/ai/agent_orchestrator.py`
+- `.forgeai_patch_backups/fact-evidence-provider-20261005/20261005-191422/forgeai/ai/agent_state.py`
+- `.forgeai_patch_backups/fact-evidence-provider-20261005/20261005-191422/forgeai/core/agent_reality.py`
+- `.forgeai_patch_backups/forgeai-repair-history-stagnation-v1/20261005-173835/ARCHITECTURE.md`
+- `.forgeai_patch_backups/forgeai-repair-history-stagnation-v1/20261005-173835/ROADMAP.md`
+- `.forgeai_patch_backups/forgeai-repair-history-stagnation-v1/20261005-173835/docs/CURRENT_STATE.md`
+- `.forgeai_patch_backups/forgeai-repair-history-stagnation-v1/20261005-173835/docs/RECOVERY_FOUNDATION.md`
+- `.forgeai_patch_backups/forgeai-repair-history-stagnation-v1/20261005-173835/forgeai/ai/agent_orchestrator.py`
+- `.forgeai_patch_backups/forgeai-repair-history-stagnation-v1/20261005-173835/forgeai/ai/agent_state.py`
+- `.forgeai_patch_backups/forgeai-repair-history-stagnation-v1/20261005-173835/forgeai/core/agent_reality.py`
+- `.forgeai_patch_backups/forgeai-repair-history-stagnation-v1/20261005-173835/tests/core/test_run_reality_projection.py`
+- `.forgeai_patch_backups/recovery-escalation-2026-10-05/20261005-181118/ARCHITECTURE.md`
+- `.forgeai_patch_backups/recovery-escalation-2026-10-05/20261005-181118/ROADMAP.md`
+- `.forgeai_patch_backups/recovery-escalation-2026-10-05/20261005-181118/docs/CURRENT_STATE.md`
+- `.forgeai_patch_backups/recovery-escalation-2026-10-05/20261005-181118/docs/RECOVERY_FOUNDATION.md`
+- `.forgeai_patch_backups/recovery-escalation-2026-10-05/20261005-181118/forgeai/ai/agent_analyzer.py`
+- `.forgeai_patch_backups/recovery-escalation-2026-10-05/20261005-181118/forgeai/ai/agent_orchestrator.py`
+- `.forgeai_patch_backups/recovery-escalation-2026-10-05/20261005-181118/forgeai/ai/agent_repairer.py`
+- `.forgeai_patch_backups/recovery-escalation-2026-10-05/20261005-181118/forgeai/ai/agent_state.py`
+- `.forgeai_patch_backups/recovery-escalation-2026-10-05/20261005-181118/forgeai/core/agent_reality.py`
+- `.forgeai_patch_backups/recovery-escalation-2026-10-05/20261005-181118/forgeai/ui/main_window.py`
+- `.forgeai_patch_backups/recovery-escalation-2026-10-05/20261005-181118/tests/core/test_run_reality_projection.py`
+- `.forgeai_patch_backups/recovery-escalation-2026-10-05/20261005-181118/tests/test_agent_recovery_ui.py`
+- `.forgeai_patch_backups/recovery-escalation-2026-10-05/20261005-181118/tests/test_repair_history.py`
+- `.forgeai_patch_backups/verification-framework-2026-10-05/20261005-190122/ARCHITECTURE.md`
+- `.forgeai_patch_backups/verification-framework-2026-10-05/20261005-190122/ROADMAP.md`
+- `.forgeai_patch_backups/verification-framework-2026-10-05/20261005-190122/docs/CAPABILITY_PLUGINS.md`
+- `.forgeai_patch_backups/verification-framework-2026-10-05/20261005-190122/docs/COMPLETION_GATE.md`
+- `.forgeai_patch_backups/verification-framework-2026-10-05/20261005-190122/docs/CORE_PRINCIPLES.md`
+- `.forgeai_patch_backups/verification-framework-2026-10-05/20261005-190122/docs/CURRENT_STATE.md`
+- `.forgeai_patch_backups/verification-framework-2026-10-05/20261005-190122/docs/RECOVERY_FOUNDATION.md`
+- `.forgeai_patch_backups/verification-framework-2026-10-05/20261005-190122/forgeai/ai/agent_orchestrator.py`
+- `.forgeai_patch_backups/verification-framework-2026-10-05/20261005-190122/forgeai/ai/agent_state.py`
+- `.forgeai_patch_backups/verification-framework-2026-10-05/20261005-190122/forgeai/core/agent_reality.py`
+- `.rossa_install_backups/repair_analyzer_v1_1/forgeai/ai/agent_analyzer.py`
+- `.rossa_install_backups/reviewer_repairer_v1_0_20261006-124818/forgeai/ai/agent_repairer.py`
+- `.rossa_install_backups/reviewer_repairer_v1_0_20261006-124818/forgeai/ai/agent_reviewer.py`
+- `.rossa_install_backups/reviewer_repairer_v1_0_20261006-124818/tests/test_agent_reviewer.py`
+- `.rossa_install_backups/role_foundation_analyzer_planner_v1_0_20261006-121735/forgeai/ai/agent_analyzer.py`
+- `.rossa_install_backups/role_foundation_analyzer_planner_v1_0_20261006-121735/forgeai/ai/agent_planner.py`
+- `docs/CAPABILITY_PLUGINS.md`
+- `docs/COMPLETION_GATE.md`
+- `docs/CORE_PRINCIPLES.md`
+- `docs/FACT_EVIDENCE_PROVIDER.md`
+- `docs/MODEL_POLICY.md`
+- `docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
+- `docs/PROJECTLESS_CHAT_ACCESS.md`
+- `docs/PYTHON_PLUGIN.md`
+- `docs/VERIFICATION_FRAMEWORK.md`
+- `forgeai/ai/agent_analyzer.py.before_rossa_analyzer_v1`
+- `forgeai/ai/model_policy.py`
+- `forgeai/ai/prompt_core.py`
+- `forgeai/ai/prompt_roles.py`
+- `forgeai/ai/prompts.py.before_rossa_chat`
+- `forgeai/ai/prompts.py.before_rossa_chat_v11`
+- `forgeai/ai/prompts.py.before_rossa_chat_v12`
+- `forgeai/ai/prompts/core/ROSSA_CORE_IDENTITY.md`
+- `forgeai/ai/prompts/core/ROSSA_CORE_IDENTITY.md.backup`
+- `forgeai/ai/prompts/roles/plan_reviewer.md`
+- `forgeai/ai/prompts/roles/project_planner.md`
+- `forgeai/ai/prompts/roles/repair_analyzer.md`
+- `forgeai/ai/prompts/roles/repair_planner.md`
+- `forgeai/core/capability_registry.py`
+- `forgeai/core/completion_gate.py`
+- `forgeai/core/fact_evidence_provider.py`
+- `forgeai/core/plugin_manager.py`
+- `forgeai/core/recovery_escalation.py`
+- `forgeai/core/stagnation_detector.py`
+- `forgeai/core/verification_framework.py`
+- `forgeai/plugins/__init__.py`
+- `forgeai/plugins/python_plugin.py`
+- `forgeai/ui/access_grants_dialog.py`
+- `forgeai/ui/capabilities_dialog.py`
+- `tests/test_access_grants_dialog.py`
+- `tests/test_capabilities_dialog.py`
+- `tests/test_capability_registry.py`
+- `tests/test_completion_gate.py`
+- `tests/test_fact_evidence_provider.py`
+- `tests/test_model_policy.py`
+- `tests/test_model_policy_ui.py`
+- `tests/test_plugin_manager.py`
+- `tests/test_projectless_chat_access.py`
+- `tests/test_prompt_creation.py.before_rossa_chat_v11`
+- `tests/test_prompt_creation.py.before_rossa_chat_v12`
+- `tests/test_python_plugin.py`
+- `tests/test_recovery_escalation.py`
+- `tests/test_repair_history.py`
+- `tests/test_rossa_analyzer_prompt.py`
+- `tests/test_rossa_planner_prompt.py`
+- `tests/test_rossa_repairer_prompt.py`
+- `tests/test_rossa_reviewer_prompt.py`
+- `tests/test_stagnation_detector.py`
+- `tests/test_verification_framework.py`
 
 #### Letzte relevante Commits
 
-- `90b645c (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) fix: improve request routing and reviewer handling`
+- `fa174bd (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: add recovery context refresh and failure fingerprints`
+- `90b645c fix: improve request routing and reviewer handling`
 - `e259349 fix: stabilize Ollama integration and clean repository`
 - `b196d7e Add current LGDC n8n workflow`
 - `4471d65 feat: refresh reality before agent recovery`
-- `e8b229b feat: integrate project reality into agent workflow`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell
@@ -530,7 +689,256 @@ Der Orchestrator erfasst Verifikationsergebnisse als unveränderliche
 Fehlgeschlagene Ergebnisse erhalten eine deterministische, versionierte
 `FailureFingerprint`-Signatur. Die bestehende Zustands-History bleibt erhalten.
 
-Diese Daten sind die Grundlage für spätere Stagnationserkennung; automatische
-Eskalation und dauerhafte Run-Persistenz sind noch nicht implementiert.
-Details und nachgewiesene Grenzen: `docs/RECOVERY_FOUNDATION.md`.
+`AgentRun.repair_history` verbindet abgeschlossene Reparaturversuche mit der
+vorherigen Fehlersignatur, Analyse, Reparaturplan und dem danach beobachteten
+Verifikationsergebnis. `StagnationDetector` wertet diese Evidence zusammen mit
+`verification_history` deterministisch aus und erzeugt einen
+`StagnationStatus`.
+
+`RecoveryEscalationPolicy` konsumiert diesen Status ohne LLM. Bei aktiver
+Stagnation und verbleibendem Repair-Budget fordert sie eine breitere Analyse
+auf Basis des aktuellen freigegebenen Projektkontexts. Bei einem fehlgeschlagenen Repair mit erschöpftem Budget
+beendet der Orchestrator den Lauf kontrolliert als `FAILED`. Die aktuelle
+Entscheidung und ihre History liegen im autoritativen `AgentRun` und werden in
+`RunReality` projiziert. Ein eigener Dependency-Scanner, Redesign/Replanning
+und dauerhafte Run-Persistenz sind noch nicht implementiert. Details und
+nachgewiesene Grenzen: `docs/RECOVERY_FOUNDATION.md`.
 <!-- FORGE:RECOVERY_FOUNDATION:END -->
+
+<!-- FORGE:CORE_TRUTH_PLUGIN_PRINCIPLES:START -->
+## Core-Prinzipien: Evidence, Script-first Truth und Capability-Plugins
+
+ForgeAI behandelt objektiv prüfbare Zustände nicht als LLM-Wissen. Alles, was
+über Dateisystem, Git, Tests, Compiler, lokale APIs, Prozesse oder andere
+Werkzeuge direkt ermittelt werden kann, wird durch deterministische Provider
+abgefragt und als Evidence bzw. Fact geführt. LLMs dürfen diese Evidence
+interpretieren, aber nicht durch Erinnerung oder Behauptung ersetzen.
+
+Für widersprüchliche Informationen gilt grundsätzlich:
+
+`direkte aktuelle Tool-Evidence`
+→ `aktuelle persistierte Evidence`
+→ `Forge Reality/State`
+→ `LLM-Inferenz`
+→ `Erinnerung/Historie`
+
+Niedrigere Ebenen dürfen höhere Ebenen nicht überschreiben. Historische Fakten
+müssen vor zustandsabhängigen Entscheidungen auf Freshness geprüft werden.
+
+Der Core bleibt fachneutral. Sprach-, Engine- und Medienfähigkeiten werden
+schrittweise als aktivierbare Capability-Plugins angebunden. Plugins liefern
+Tools, Adapter, Verification-Profile und Fachwissen, unterliegen aber weiterhin
+den zentralen Authority-, Evidence-, Verification-, Recovery-, Stagnations- und
+Completion-Regeln.
+
+Ein Plugin darf insbesondere keine direkte Schreib- oder Completion-Hoheit
+übernehmen und keine objektiv prüfbaren Zustände durch LLM-Aussagen ersetzen.
+
+Das Zielprinzip lautet: **Forge darf sich erinnern, aber es muss nachsehen.**
+
+Details: `docs/CORE_PRINCIPLES.md` und `docs/CAPABILITY_PLUGINS.md`.
+<!-- FORGE:CORE_TRUTH_PLUGIN_PRINCIPLES:END -->
+
+
+<!-- FORGE:COMPLETION_GATE:START -->
+## CompletionGate: technische Wahrheit und Auftragserfüllung
+
+Der Orchestrator führt einen technisch erfolgreichen Verifikationslauf durch das
+fachneutrale `CompletionGate`, statt technische Test-Evidence implizit mit
+vollständiger Auftragserfüllung gleichzusetzen.
+
+Vier Evidence-Klassen sind im Core definiert: `technical`, `runtime`, `visual`
+und `semantic`. Technische, Runtime- und visuelle Aussagen zählen nur als
+beobachtete Facts. Semantische Inferenz ist zulässig, muss jedoch reale
+Fact-Evidence-IDs referenzieren. Das Gate selbst führt keine LLM-Aufrufe und
+keine fachlichen Tests aus.
+
+Fehlende Required Evidence erzeugt den transienten Zustand
+`COMPLETION_CHECKING`. Erst belegte Ergebnisse führen zu den finalen Outcomes
+`COMPLETED`, `PARTIALLY_COMPLETED` oder `FAILED`.
+
+Der aktuelle bestehende Agentenworkflow verwendet zunächst nur `technical` als
+Required Category. Das implementierte Verification-Framework kann weitere Kategorien
+pro Aufgabe oder Capability-Plugin aktivieren, ohne die Completion-Policy zu
+umgehen.
+
+`AgentRun` ist autoritativ für `completion_evidence`, `completion_decision` und
+`completion_history`; `RunReality` bleibt eine davon abgeleitete Projection.
+
+Details: `docs/COMPLETION_GATE.md`.
+<!-- FORGE:COMPLETION_GATE:END -->
+
+<!-- FORGE:VERIFICATION_FRAMEWORK:START -->
+## Generisches Verification Framework
+
+Der Forge-Core besitzt eine fachneutrale Registry-/Profile-Schicht für reale
+Prüfungen. `VerificationRegistry` registriert Provider und benannte
+`VerificationProfile`; `VerificationEngine` führt die Profile aus und erzeugt
+strukturierte `VerificationReport`-Objekte.
+
+Objektive Provider für `technical`, `runtime` und `visual` dürfen ausschließlich
+`FACT`-Evidence liefern. Provider-Ausfälle gelten als `UNKNOWN`, nicht als
+impliziter Erfolg. Reports sind an `task_id` und `execution_round` gebunden und
+werden vom Orchestrator bei veraltetem oder falschem Laufbezug abgelehnt.
+
+Ein erforderliches Verification-Profile erweitert deterministisch die Required
+Categories des `CompletionGate`. `AgentRun` historisiert angeforderte Profile
+und Reports; `RunReality` projiziert diesen Zustand.
+
+Der Core enthält dabei keine fachlichen Checker. Python, Unreal, Blender,
+ComfyUI, Bild, Video oder Audio liefern später eigene Provider/Profile über die
+Capability-Schicht.
+
+Details: `docs/VERIFICATION_FRAMEWORK.md`.
+<!-- FORGE:VERIFICATION_FRAMEWORK:END -->
+
+
+<!-- FORGE:FACT_EVIDENCE_PROVIDER:START -->
+## Zentraler Fact-/Evidence-Provider
+
+Der Forge-Core besitzt jetzt eine fachneutrale Truth-Schicht aus `FactRegistry`,
+`FactService`, `FactQuery`, `FactObservation` und persistierbaren `FactRecord`-Objekten.
+
+Objektive Zustände dürfen nur von registrierten maschinellen Quellen stammen:
+Script, API, Dateisystem, Repository, Datenbank, Runtime oder Tool. LLM, Memory
+und Chat sind bewusst keine zulässigen `FactSourceType`-Werte.
+
+Der `FactService` kontrolliert Freshness und Provenance zentral. Positive Facts
+dürfen nur innerhalb eines expliziten Freshness-Budgets und nur im identischen
+Task-/Execution-/Projektkontext wiederverwendet werden. `UNKNOWN` und `ERROR`
+werden nicht als frische Wahrheit gecacht. Ein Wechsel der `execution_round`
+erzwingt einen neuen Beobachtungskontext.
+
+Negative Aussagen sind ebenfalls evidence-pflichtig: `ABSENT` gilt nur dann als
+Fact, wenn der Provider eine vollständige negative Prüfung als
+`authoritative_absence` bestätigt. Partielles „nicht gefunden“ wird zu
+`UNKNOWN` herabgestuft.
+
+Der `AgentOrchestrator` stellt `resolve_fact(...)` als zentralen Einstieg bereit.
+Frisch beobachtete Facts werden in `AgentRun.fact_history` historisiert und von
+`RunReality` projiziert.
+
+Der FactService führt keine beliebigen LLM-generierten Shell-Kommandos aus.
+Konkrete Tools und Scripts werden von registrierten Core- oder
+Capability-Providern gekapselt.
+
+Details: `docs/FACT_EVIDENCE_PROVIDER.md`.
+<!-- FORGE:FACT_EVIDENCE_PROVIDER:END -->
+
+<!-- FORGE:PLUGIN_CAPABILITY_FRAMEWORK:START -->
+## PluginManager und CapabilityRegistry
+
+Der Forge-Core besitzt eine generische Plugin-/Capability-Schicht.
+`CapabilityRegistry` registriert deklarative `PluginManifest`-Objekte;
+`PluginManager` verwaltet Aktivierung, autonome Nutzung, Projektfreigaben,
+Abhängigkeiten, Fact-Anforderungen und Executor.
+
+Forge darf passende Plugins automatisch auswählen, aber niemals abgeschaltete
+oder nur manuell erlaubte Plugins selbst freischalten. Blockierte Kandidaten
+bleiben im `CapabilityExecutionPlan` sichtbar.
+
+Capability-Pläne werden strikt seriell ausgeführt. Die erste Architektur besitzt
+bewusst keine Parallel-Ausführung, damit insbesondere GPU-intensive Tools nicht
+unkontrolliert gleichzeitig Ressourcen belegen.
+
+Plugin-Verfügbarkeit wird bei objektiven Anforderungen über den zentralen
+`FactService` geprüft. Plugins können Fact-Provider sowie Verification-Provider
+und -Profile registrieren; Authority und Completion bleiben dennoch im Core.
+
+`AgentRun.capability_plans` ist die autoritative Laufhistorie der automatischen
+Capability-Auswahl; `RunReality` projiziert sie.
+
+Die UI unter `Werkzeuge -> Plugins & Fähigkeiten` erlaubt Benutzerkontrolle über
+Aktivierung, autonome Nutzung und projektspezifische Auto-Freigabe.
+
+`model_roles` werden deklarativ erfasst. Die PrimaryModelPolicy wählt inzwischen
+standardmäßig das konfigurierte Primärmodell; automatische Specialist-Auswahl
+aus diesen Rollen bleibt ein separater Folgeschritt.
+
+Details: `docs/PLUGIN_CAPABILITY_FRAMEWORK.md`.
+<!-- FORGE:PLUGIN_CAPABILITY_FRAMEWORK:END -->
+
+<!-- FORGE:PYTHON_REFERENCE_PLUGIN:START -->
+## Python als erstes reales Capability-Plugin
+
+Das Built-in-Plugin `python` ist die Referenzimplementierung für die
+Capability-Architektur. Es wird beim Composition Root über
+`register_builtin_plugins(...)` registriert und bleibt vollständig den
+Core-Regeln für Authority, Facts, Verification und serielle Ausführung
+untergeordnet.
+
+Der Plugin-Fact-Provider `python.environment` beobachtet Interpreter, Version,
+pytest-Verfügbarkeit und Projektmarker ausschließlich über Dateisystem und
+Subprozesse. Die Plugin-Verfügbarkeit hängt vom beobachteten Fact
+`python.available = true` ab.
+
+Das Verification-Profile `python-source` enthält die Required Checks
+`python-interpreter` und `python-compile`. Die Syntaxprüfung wird mit dem real
+ausgewählten Interpreter über `py_compile` ausgeführt. Das Plugin selbst darf
+keine Completion-Entscheidung treffen.
+
+Der Executor akzeptiert nur die expliziten Aktionen `inspect`, `compile` und
+`test`; ohne explizite Aktion gilt `inspect`. Beliebige Shell-/Python-Kommandos
+werden nicht aus LLM-Text übernommen.
+
+Die Plugin-UI zeigt zusätzlich einen evidence-basierten Status (`Bereit` /
+`Nicht verfügbar`) aus den Fact-Anforderungen. Aktivierung und autonome Nutzung
+bleiben getrennte Benutzerfreigaben.
+
+`model_roles = (coding, reasoning)` bleibt deklarativ. Die PrimaryModelPolicy
+verwendet standardmäßig das Primärmodell; ein Spezialmodell wird daraus noch
+nicht automatisch ausgewählt.
+
+Details: `docs/PYTHON_PLUGIN.md`.
+<!-- FORGE:PYTHON_REFERENCE_PLUGIN:END -->
+
+<!-- FORGE:PROJECTLESS_CHAT_ACCESS:START -->
+## Projektloser Chat und lokale Read-Authority
+
+Forge trennt drei Request-Klassen mit unterschiedlicher Authority:
+
+1. normaler Chat ohne lokalen Dateizugriff,
+2. explizites lokales Lesen,
+3. projektgebundene Dateiänderung.
+
+Normaler Chat benötigt kein geöffnetes Projekt. Eine Änderung darf dagegen erst
+in den Agentenworkflow gelangen, wenn ein Projekt geöffnet oder neu erstellt
+wurde. `WorkspaceTools` bleibt unabhängig von Lesefreigaben strikt auf den
+aktiven Projektroot begrenzt.
+
+Für lokales Lesen außerhalb des Projektkontexts existiert eine eigenständige
+Read-Authority. Persistente Datei-/Ordnerfreigaben werden in
+`ai_external_access_grants` gespeichert. Optional kann der Benutzer globalen
+Lesezugriff aktivieren. Global bedeutet: konkrete lokale Pfade dürfen ohne neue
+Freigaberückfrage gelesen werden; es bedeutet weder Disk-Scan noch Schreibrecht.
+
+`AIContextProvider` nimmt externe Inhalte nur als konkrete `extra_paths` des
+aktuellen Requests auf. Eine vorhandene Freigabe führt nicht automatisch dazu,
+dass externe Inhalte in jeden Chat einfließen.
+
+UI: `Werkzeuge -> KI-Lesefreigaben`.
+
+Details: `docs/PROJECTLESS_CHAT_ACCESS.md`.
+<!-- FORGE:PROJECTLESS_CHAT_ACCESS:END -->
+
+<!-- FORGE:MODEL_POLICY:START -->
+## Primary-first Modellarchitektur
+
+Forge besitzt eine modellunabhängige Core-Logik und behandelt Rollen nicht als
+Grund für automatische Modellwechsel. `PrimaryModelPolicy` hält ein
+Primärmodell über zusammenhängende Agentenarbeit stabil. Neue AgentWorker
+konfigurieren deshalb nur noch ein Primärmodell statt separater Planner-,
+Reviewer-, Advisor- und Repairer-Routen.
+
+`ModelProfile` beschreibt Modellmetadaten. `ModelAdapter` ist die einzige
+vorgesehene Grenze für spätere modellspezifische Prompt-/Optionsanpassungen;
+Adapter dürfen Authority, Evidence, Verification, Completion oder Recovery nie
+verändern.
+
+Spezialisten sind opt-in: sie müssen registriert und für die konkrete Rolle
+explizit angefordert werden. Nach einem Spezialistenaufruf kehrt die Policy zum
+Primärmodell zurück. Explizite Legacy-/Benutzerrouten bleiben kompatibel und
+überschreiben die Policy bewusst.
+
+Details: `docs/MODEL_POLICY.md`.
+<!-- FORGE:MODEL_POLICY:END -->

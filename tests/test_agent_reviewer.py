@@ -1,4 +1,4 @@
-﻿from forgeai.ai.agent_contracts import AgentPlan, ReviewDecision
+from forgeai.ai.agent_contracts import AgentPlan, ReviewDecision
 from forgeai.ai.agent_reviewer import AgentReviewer
 
 
@@ -102,7 +102,7 @@ def test_reviewer_requires_evidence_for_policy_claims():
     )
     AgentReviewer(router).review(make_plan(), "Projektkontext ohne Inhaltsrichtlinie")
     prompt = router.calls[0][1]
-    assert "Erfinde keine generelle ForgeAI-Inhaltsrichtlinie" in prompt
+    assert "Erfinde keine generelle Inhaltsrichtlinie" in prompt
     assert "tatsächlichen Anforderung" in prompt
     assert "Sicherheitsgrenzen des verwendeten Modells bleiben unberührt" in prompt
 

@@ -126,3 +126,34 @@ def test_routes_returns_copy():
         provider="ollama",
         model="qwen3:8b",
     )
+
+
+def test_primary_model_is_default_for_all_agent_roles():
+    router = ModelRouter()
+    router.set_primary("ollama", "gpt-oss:20b")
+
+    for role in ("planner", "reviewer", "repairer", "advisor", "coder"):
+        assert router.resolve(role) == ModelTarget("ollama", "gpt-oss:20b")
+
+
+def test_explicit_route_still_overrides_primary_for_backward_compatibility():
+    router = ModelRouter()
+    router.set_primary("ollama", "gpt-oss:20b")
+    router.set_route("coder", "ollama", "manual-coder:latest")
+
+    decision = router.resolve_decision("coder")
+
+    assert decision.target == ModelTarget("ollama", "manual-coder:latest")
+    assert decision.source == "explicit"
+
+
+def test_router_specialist_returns_to_primary_after_call():
+    provider = FakeProvider()
+    router = ModelRouter(providers={"ollama": provider})
+    router.set_primary("ollama", "gpt-oss:20b")
+    router.register_specialist("coder", "ollama", "special-coder:latest")
+
+    result = router.generate("coder", "code", specialist_required=True)
+
+    assert result == "special-coder:latest: code"
+    assert router.active_target() == ModelTarget("ollama", "gpt-oss:20b")

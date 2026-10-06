@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from typing import Any
@@ -6,6 +6,9 @@ from typing import Any
 from .agent_analyzer import RepairAnalysis
 from .agent_contracts import AgentPlan, AgentTask
 from .model_router import ModelRouter
+from .prompt_core import compose_system_prompt
+from .prompt_roles import load_role_prompt
+from forgeai.core.recovery_escalation import RecoveryEscalationDecision
 
 
 class AgentRepairer:
@@ -28,12 +31,14 @@ class AgentRepairer:
         analysis: RepairAnalysis,
         project_context: str = "",
         revision_context: list[dict[str, Any]] | None = None,
+        recovery_escalation: RecoveryEscalationDecision | None = None,
     ) -> AgentPlan:
         prompt = self._build_prompt(
             task=task,
             analysis=analysis,
             project_context=project_context,
             revision_context=revision_context,
+            recovery_escalation=recovery_escalation,
         )
 
         response = self.model_router.generate(
@@ -50,7 +55,9 @@ class AgentRepairer:
         analysis: RepairAnalysis,
         project_context: str,
         revision_context: list[dict[str, Any]] | None = None,
+        recovery_escalation: RecoveryEscalationDecision | None = None,
     ) -> str:
+        role_prompt = load_role_prompt("repair_planner")
         analysis_json = json.dumps(
             {
                 "summary": analysis.summary,
@@ -68,12 +75,17 @@ class AgentRepairer:
             indent=2,
         )
 
-        return "\n".join(
+        escalation_text = "Keine aktive Recovery-Eskalation."
+        if recovery_escalation is not None and recovery_escalation.active:
+            escalation_text = json.dumps(
+                recovery_escalation.as_prompt_context(),
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        repair_input = "\n".join(
             [
-                "Du bist der Reparatur-Agent von ForgeAI.",
-                "",
-                "Erstelle einen konkreten Reparaturplan.",
-                "Du darfst keine Dateien selbst verändern.",
+                "## Current Repair Planning Input",
                 "",
                 f"TASK_ID: {task.task_id}",
                 f"USER_REQUEST:\n{task.user_request}",
@@ -84,19 +96,12 @@ class AgentRepairer:
                 "",
                 f"PREVIOUS_REVIEW_FEEDBACK:\n{revision_json}",
                 "",
-                "Regeln:",
-                "- Behebe nur die tatsächlich festgestellten Probleme.",
-                "- Verändere keine unnötigen Dateien.",
-                "- Der Plan muss mit dem vorhandenen Projektkontext vereinbar sein.",
-                "- Berücksichtige vorheriges Reviewer-Feedback.",
-                "- Jede geplante Änderung muss eine unterstützte Dateioperation verwenden.",
+                f"RECOVERY_ESCALATION:\n{escalation_text}",
                 "",
-                "Erlaubte action-Werte:",
-                "- create",
-                "- create_directory",
-                "- replace",
-                "- insert_before",
-                "- insert_after",
+                "## Repair Planning Contract",
+                "",
+                "Jede geplante Änderung muss eine unterstützte Dateioperation verwenden.",
+                "Erlaubte action-Werte: create, create_directory, replace, insert_before, insert_after.",
                 "",
                 "Antworte ausschließlich als gültiges JSON.",
                 "Verwende exakt diese Struktur:",
@@ -111,8 +116,12 @@ class AgentRepairer:
                 "  ],",
                 '  "rationale": "Begründung"',
                 "}",
+                "",
+                "Gib keine zusätzlichen Felder und keinen Text außerhalb des JSON-Objekts aus.",
             ]
         )
+
+        return compose_system_prompt(role_prompt, repair_input)
 
     @classmethod
     def _parse_response(cls, response: str) -> AgentPlan:

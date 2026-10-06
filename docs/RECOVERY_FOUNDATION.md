@@ -62,11 +62,60 @@ Die Modellantworten werden am Ollama-Netzwerkübergang durch feste Testantworten
 ersetzt. Ein echter lokaler Ollama-/Windows-Gesamtlauf ist damit nicht
 nachgewiesen. Die vollständige Linux-Testsuite besteht mit 347 Tests.
 
+## RepairHistory und StagnationDetector
+
+`AgentRun.repair_history` erfasst abgeschlossene Reparaturversuche als
+unveränderliche `RepairRecord`-Einträge. Ein Eintrag verbindet die vorherige
+Fehlersignatur mit Analyse, Reparaturanforderungen, Reparaturplan, geplanten
+Dateipfaden und dem danach tatsächlich beobachteten Verifikationsergebnis.
+Planpfade bleiben weiterhin Planungsevidence und sind kein Beweis für
+tatsächlich geschriebene Dateien.
+
+`StagnationDetector` arbeitet ausschließlich auf aufgezeichneter Evidence.
+Er zählt aufeinanderfolgende identische Fehlersignaturen und aufeinanderfolgende
+identische Reparatur-Zielmengen. Standardmäßig wird Stagnation erst markiert,
+wenn sowohl ein Fehler als auch dieselbe Zielmenge mindestens zweimal
+aufeinanderfolgend beobachtet wurden. Ein geänderter Fehler oder ein geändertes
+Reparaturziel verhindert damit eine falsche Stagnationsmeldung. Erfolgreiche
+Verifikation setzt die Fehlerwiederholung zurück, löscht aber keine Historie.
+
+Die Erkennung bleibt von der Handlungsentscheidung getrennt.
+`StagnationDetector` liefert nur Evidence; die darauf folgende Strategie liegt
+bei `RecoveryEscalationPolicy`.
+
+## RecoveryEscalation
+
+`RecoveryEscalationPolicy` konsumiert ausschließlich den aufgezeichneten
+`StagnationStatus` sowie das konfigurierte Repair-Budget. Die Policy verwendet
+kein LLM und liest keinen Quellcode selbst.
+
+Bei aktiver Stagnation und verbleibendem Reparaturbudget erzeugt sie die Aktion
+`broaden_analysis`. Analyzer und Repairer erhalten daraufhin zusätzlich einen
+strukturierten `RECOVERY_ESCALATION`-Block mit Fehlersignatur, wiederholten
+Zielpfaden, Grundcodes, verbleibendem Budget und deterministischen Vorgaben.
+Insbesondere darf der zuvor stagnierende Reparaturplan nicht unverändert
+wiederholt werden; Caller, Imports, Abhängigkeiten und angrenzende Dateien
+dürfen nur auf Basis des aktuellen Projektkontexts berücksichtigt werden.
+
+Ist das konfigurierte Reparaturbudget nach einem fehlgeschlagenen Repair ausgeschöpft,
+erzeugt die Policy `stop` unabhängig davon, ob die letzte Fehlersignatur inzwischen
+gewechselt hat. Der Orchestrator beendet den Lauf dann
+kontrolliert als `FAILED`, statt einen weiteren automatischen Repair-Versuch zu
+starten. Historie und Evidence bleiben erhalten.
+
+`AgentRun.recovery_escalation` enthält die aktuelle Entscheidung;
+`recovery_escalation_history` bewahrt aktive Eskalationsentscheidungen für die
+Nachvollziehbarkeit. Beide werden zusätzlich in `RunReality` projiziert.
+
+Wichtig: `broaden_analysis` erweitert derzeit die Analyseanweisung über den
+bereits frisch aufgebauten und freigegebenen Projektkontext. Es erteilt keine
+neuen Leserechte und führt noch keinen eigenen Dependency-Scan oder ein
+separates Redesign/Replanning durch. Diese weitergehenden Strategien bleiben
+spätere Ausbaustufen.
+
 ## Nächste Schritte
 
-Diese Grundlage ändert keine Repair-Budgets oder Freigaben. Sie führt noch
-keine automatische Stagnationsentscheidung, Dependency-Eskalation,
-Redesign-Schleife, Run-Persistenz nach Neustart oder CompletionGate ein.
-Diese Mechanismen können anschließend auf aktuellen Kontexten und der
-Verifikationshistorie aufbauen. ComfyUI, Video, Blender, Hunyuan3D und Audio
-bleiben spätere Erweiterungen.
+`CompletionGate` ist jetzt als nächste Core-Stufe umgesetzt. Danach folgen das
+konkrete Runtime-/Visual-/Semantic-Provider auf Basis des implementierten Verification-Frameworks,
+Fact-/Evidence-Provider mit Freshness-Regeln und persistente Run-Historie. ComfyUI, Video, Blender, Hunyuan3D und Audio bleiben
+spätere Capability-Plugins.

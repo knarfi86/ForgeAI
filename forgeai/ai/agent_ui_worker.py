@@ -57,10 +57,11 @@ class AgentWorkflowWorker(QThread):
 
             router = ModelRouter()
             router.register_provider("ollama", provider)
-            router.set_route("planner", "ollama", self.model)
-            router.set_route("reviewer", "ollama", self.model)
-            router.set_route("advisor", "ollama", self.model)
-            router.set_route("repairer", "ollama", self.model)
+            router.set_primary(
+                "ollama",
+                self.model,
+                notes="Forge AgentRun primary model",
+            )
 
             planner = AgentPlanner(router)
             reviewer = AgentReviewer(router)
@@ -191,10 +192,11 @@ class AgentRecoveryWorker(QThread):
 
             router = ModelRouter()
             router.register_provider("ollama", provider)
-            router.set_route("planner", "ollama", self.model)
-            router.set_route("reviewer", "ollama", self.model)
-            router.set_route("advisor", "ollama", self.model)
-            router.set_route("repairer", "ollama", self.model)
+            router.set_primary(
+                "ollama",
+                self.model,
+                notes="Forge AgentRun primary model",
+            )
 
             analyzer = AgentAnalyzer(router)
             repairer = AgentRepairer(router)

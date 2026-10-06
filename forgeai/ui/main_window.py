@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QFileDialog, QLabel, QMainWindow, QMessageBox, QSplitter, QToolBar,
-    QVBoxLayout, QWidget,
+    QVBoxLayout, QWidget, QInputDialog,
 )
 
 from forgeai.ai.agent_contracts import AgentTask
@@ -22,10 +22,15 @@ from forgeai.ai.ollama_client import OllamaClient
 from forgeai.ai.prompts import SYSTEM_PROMPT, PROMPT_CREATION_INSTRUCTIONS
 from forgeai.ai.request_routing import (
     is_project_change_request, is_creative_prompt_request, is_standalone_prompt_request,
+    is_local_read_request, extract_local_paths,
 )
 from forgeai.config import Config
 from forgeai.core.ai_context import AIContextProvider
 from forgeai.core.evidence_validator import EvidenceValidator
+from forgeai.core.capability_registry import CapabilityRegistry
+from forgeai.core.fact_evidence_provider import FactRegistry, FactService
+from forgeai.core.plugin_manager import PluginManager
+from forgeai.core.verification_framework import VerificationRegistry
 from forgeai.core.project_evidence import ProjectEvidence
 from forgeai.core.reality_collector import RealityCollector
 from forgeai.core.agent_reality import AgentReality
@@ -36,6 +41,9 @@ from forgeai.core.task_manager import TaskManager
 from forgeai.core.workspace_database import WorkspaceDatabase
 from forgeai.core.workspace_manager import WorkspaceManager
 from forgeai.core.workspace_tools import ChangePreview, WorkspaceTools
+from forgeai.plugins import register_builtin_plugins
+from forgeai.ui.capabilities_dialog import CapabilitiesDialog
+from forgeai.ui.access_grants_dialog import AccessGrantsDialog
 from forgeai.ui.chat_view import ChatView
 from forgeai.ui.file_viewer import FileViewer
 from forgeai.ui.input_bar import InputBar
@@ -70,6 +78,22 @@ class MainWindow(QMainWindow):
             accessible_files_provider=self.workspace.ai_accessible_files,
         )
         self.evidence_validator = EvidenceValidator()
+        self.fact_registry = FactRegistry()
+        self.fact_service = FactService(self.fact_registry)
+        self.verification_registry = VerificationRegistry()
+        self.capability_registry = CapabilityRegistry()
+        self.plugin_manager = PluginManager(
+            self.capability_registry,
+            fact_service=self.fact_service,
+            verification_registry=self.verification_registry,
+        )
+        register_builtin_plugins(self.plugin_manager)
+        try:
+            plugin_preferences = json.loads(self._setting("plugin_preferences", "{}"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            plugin_preferences = {}
+        if isinstance(plugin_preferences, dict):
+            self.plugin_manager.import_preferences(plugin_preferences)
         self.tasks = TaskManager(database)
         self.ollama = OllamaClient()
         self.worker = None
@@ -82,11 +106,13 @@ class MainWindow(QMainWindow):
         self._agent_task: AgentTask | None = None
         self._agent_reality: AgentReality | None = None
         self._agent_plan = None
+        self._capability_plan = None
         self._agent_project_context = ""
         self._agent_num_ctx: int | None = None
         self.agent_review_enabled = self._setting("agent_review_enabled", "true").casefold() not in {"0", "false", "off", "no"}
         self._stream_is_action = False
         self._pending_change_previews = None
+        self._request_extra_context_paths: list[Path] = []
         self.ollama_url = Config.LOCAL_OLLAMA_URL
         self._save_setting("ollama_url", self.ollama_url)
         self.model = self._setting("model", Config.DEFAULT_MODEL)
@@ -150,7 +176,8 @@ class MainWindow(QMainWindow):
         self.workspace_status = QLabel("Workspace: lokal")
         self.agent_status = QLabel("Agent: bereit")
         self.index_status = QLabel("Index: bereit")
-        for label in (self.workspace_status, self.agent_status, self.project_status, self.index_status, self.backend_status, self.ollama_status, self.model_status, self.git_status, self.file_status):
+        self.capability_status = QLabel("Plugins: 0")
+        for label in (self.workspace_status, self.agent_status, self.project_status, self.index_status, self.backend_status, self.ollama_status, self.model_status, self.git_status, self.file_status, self.capability_status):
             self.statusBar().addPermanentWidget(label)
         self._update_status()
 
@@ -164,6 +191,7 @@ class MainWindow(QMainWindow):
 
         file_menu = self.menuBar().addMenu("Datei")
         file_menu.addAction("Projekt öffnen", self.choose_project)
+        file_menu.addAction("Neues Projekt", self.create_project)
         file_menu.addAction("Projekt schließen", self.close_project)
         self.recent_menu = file_menu.addMenu("Zuletzt geöffnet")
         self.recent_menu.aboutToShow.connect(self.populate_recent_projects)
@@ -179,6 +207,9 @@ class MainWindow(QMainWindow):
         tools_menu.addAction("Terminal", self.focus_terminal)
         tools_menu.addAction("Aufgaben", self.show_tasks)
         tools_menu.addAction("Logs", self.show_logs)
+        tools_menu.addSeparator()
+        tools_menu.addAction("Plugins & Fähigkeiten", self.show_capabilities)
+        tools_menu.addAction("KI-Lesefreigaben", self.show_access_grants)
         ai_menu = self.menuBar().addMenu("KI")
         ai_menu.addAction("Modell wechseln", self.show_settings)
         ai_menu.addAction("Systemprompt", self.show_system_prompt)
@@ -312,6 +343,25 @@ class MainWindow(QMainWindow):
 
         is_change_request = self._is_change_request(text)
         self._stream_is_action = self._action_response_format(text) is not None
+        self._request_extra_context_paths = []
+
+        if is_change_request and not self.workspace.active_project:
+            if not self._ensure_project_for_change_request():
+                self._record_local_notice(
+                    text,
+                    "Kein aktuelles Projekt geöffnet. Bitte Projekt wählen oder neues Projekt erstellen.",
+                )
+                return
+
+        if not is_change_request and is_local_read_request(text):
+            read_targets = self._prepare_read_targets(text)
+            if read_targets is None:
+                self._record_local_notice(
+                    text,
+                    "Für diesen Leseauftrag wurde keine lokale Lesefreigabe erteilt.",
+                )
+                return
+            self._request_extra_context_paths = self.workspace.expand_read_targets(read_targets)
 
         if is_change_request:
             self.history.add_message(self.chat_id, "user", text)
@@ -415,6 +465,7 @@ class MainWindow(QMainWindow):
                 exclude_noise=is_analysis_request,
                 request=text if is_analysis_request else None,
                 include_structure=is_analysis_request,
+                extra_paths=self._request_extra_context_paths,
             )
 
         self.logger.info(
@@ -461,6 +512,135 @@ class MainWindow(QMainWindow):
         self.worker.failed.connect(self._response_failed)
         self.input_bar.set_busy(True)
         self.worker.start()
+
+    def _record_local_notice(self, user_text: str, notice: str) -> None:
+        """Record a UI-side policy response without calling the model."""
+        if self.chat_id is None:
+            return
+        self.history.add_message(self.chat_id, "user", user_text)
+        if len(self.history.messages(self.chat_id)) == 1:
+            self.history.title_chat(self.chat_id, user_text[:42])
+        self.chat_view.add_message("user", user_text)
+        self.chat_view.add_message("assistant", notice)
+        self.history.add_message(self.chat_id, "assistant", notice)
+        self.refresh_chats()
+
+    def _ensure_project_for_change_request(self) -> bool:
+        if self.workspace.active_project:
+            return True
+        box = QMessageBox(self)
+        box.setWindowTitle("Projekt erforderlich")
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(
+            "Kein aktuelles Projekt geöffnet.\n\n"
+            "Für Dateiänderungen braucht Forge ein Projekt."
+        )
+        choose_button = box.addButton("Projekt wählen", QMessageBox.ButtonRole.AcceptRole)
+        create_button = box.addButton("Neues Projekt erstellen", QMessageBox.ButtonRole.ActionRole)
+        box.addButton("Abbrechen", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked == choose_button:
+            return self.choose_project()
+        if clicked == create_button:
+            return self.create_project()
+        return False
+
+    def _prepare_read_targets(self, request: str) -> list[Path] | None:
+        """Resolve concrete local read targets and obtain explicit permission when needed."""
+        explicit = [self.workspace.filesystem.resolve(path) for path in extract_local_paths(request)]
+        if explicit:
+            approved: list[Path] = []
+            for target in explicit:
+                if not self.workspace.filesystem.is_file(target) and not self.workspace.filesystem.is_directory(target):
+                    QMessageBox.warning(self, "Lokaler Lesezugriff", f"Pfad nicht gefunden:\n{target}")
+                    return None
+                if not self.workspace.is_read_path_granted(target):
+                    if not self._request_read_grant_for_path(target):
+                        return None
+                approved.append(target)
+            return approved
+
+        normalized = request.casefold()
+        if self.workspace.active_project and any(
+            token in normalized
+            for token in ("projekt", "projektdatei", "aktuellen projekt", "aktuelles projekt")
+        ):
+            return []
+
+        return self._choose_read_target()
+
+    def _request_read_grant_for_path(self, target: Path) -> bool:
+        box = QMessageBox(self)
+        box.setWindowTitle("Lokaler Lesezugriff")
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText(
+            f"Forge soll lokalen Inhalt lesen:\n{target}\n\n"
+            "Welche Lesefreigabe möchtest du erteilen?"
+        )
+        exact_label = "Ordner freigeben" if self.workspace.filesystem.is_directory(target) else "Datei freigeben"
+        exact_button = box.addButton(exact_label, QMessageBox.ButtonRole.AcceptRole)
+        folder_button = None
+        if self.workspace.filesystem.is_file(target):
+            folder_button = box.addButton("Übergeordneten Ordner freigeben", QMessageBox.ButtonRole.ActionRole)
+        global_button = box.addButton("Global lesen erlauben", QMessageBox.ButtonRole.ActionRole)
+        box.addButton("Abbrechen", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked == exact_button:
+            self.workspace.grant_read_access(target)
+            self._update_status()
+            return True
+        if folder_button is not None and clicked == folder_button:
+            self.workspace.grant_read_access(target.parent)
+            self._update_status()
+            return True
+        if clicked == global_button:
+            self.workspace.set_global_read_access(True)
+            self._update_status()
+            return True
+        return False
+
+    def _choose_read_target(self) -> list[Path] | None:
+        box = QMessageBox(self)
+        box.setWindowTitle("Lokalen Inhalt freigeben")
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText(
+            "Forge benötigt für diesen Auftrag lokalen Inhalt.\n\n"
+            "Wähle eine Datei oder einen Ordner. Alternativ kannst du den globalen "
+            "Lesezugriff aktivieren und anschließend einen konkreten Pfad wählen."
+        )
+        file_button = box.addButton("Datei wählen", QMessageBox.ButtonRole.AcceptRole)
+        folder_button = box.addButton("Ordner wählen", QMessageBox.ButtonRole.ActionRole)
+        global_button = box.addButton("Global lesen erlauben", QMessageBox.ButtonRole.ActionRole)
+        box.addButton("Abbrechen", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked == global_button:
+            self.workspace.set_global_read_access(True)
+            self._update_status()
+            path, _ = QFileDialog.getOpenFileName(self, "Datei lesen")
+            if path:
+                return [self.workspace.filesystem.resolve(path)]
+            folder = QFileDialog.getExistingDirectory(self, "Oder Ordner lesen")
+            return [self.workspace.filesystem.resolve(folder)] if folder else None
+        if clicked == file_button:
+            path, _ = QFileDialog.getOpenFileName(self, "Datei für Forge freigeben")
+            if not path:
+                return None
+            target = self.workspace.filesystem.resolve(path)
+            self.workspace.grant_read_access(target)
+            self._update_status()
+            return [target]
+        if clicked == folder_button:
+            path = QFileDialog.getExistingDirectory(self, "Ordner für Forge freigeben")
+            if not path:
+                return None
+            target = self.workspace.filesystem.resolve(path)
+            self.workspace.grant_read_access(target)
+            self._update_status()
+            return [target]
+        return None
 
     def _set_agent_review_enabled(self, enabled: bool) -> None:
         self.agent_review_enabled = bool(enabled)
@@ -517,6 +697,26 @@ class MainWindow(QMainWindow):
 
         self._pending_user_request = request
         self._agent_project_context = project_context
+        self._capability_plan = self.plugin_manager.build_execution_plan(
+            request,
+            project_path=self.workspace.active_project,
+        )
+        if self._capability_plan.steps:
+            self.logger.info(
+                "Capability plan (serial): %s",
+                [step.plugin_id for step in self._capability_plan.steps],
+            )
+        if self._capability_plan.blocked:
+            self.logger.info(
+                "Blocked capability candidates: %s",
+                [
+                    {
+                        "plugin_id": item.plugin_id,
+                        "authorization": item.authorization.value,
+                    }
+                    for item in self._capability_plan.blocked
+                ],
+            )
         self._agent_task = AgentTask(
             task_id=uuid.uuid4().hex,
             user_request=request,
@@ -528,6 +728,8 @@ class MainWindow(QMainWindow):
         )
 
         run = AgentRun(task_id=self._agent_task.task_id)
+        if self._capability_plan is not None:
+            run.record_capability_plan(self._capability_plan)
         self._agent_reality = AgentReality.from_task_and_run(
             task=self._agent_task,
             run=run,
@@ -1393,10 +1595,27 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
             return
 
         if state == AgentState.COMPLETED:
-            self._set_agent_status("Tests bestanden")
+            self._set_agent_status("CompletionGate: Abschluss verifiziert")
+        elif state == AgentState.COMPLETION_CHECKING:
+            self.input_bar.set_busy(False)
+            self._set_agent_status("Technisch bestanden, weitere Evidence ausstehend")
+        elif state == AgentState.PARTIALLY_COMPLETED:
+            self.input_bar.set_busy(False)
+            self._set_agent_status("Auftrag nur teilweise verifiziert")
         elif state == AgentState.ANALYZING:
-            self._set_agent_status("Tests fehlgeschlagen, Analyse erforderlich")
+            escalation = getattr(
+                getattr(orchestrator, "run", None),
+                "recovery_escalation",
+                None,
+            )
+            if getattr(escalation, "active", False):
+                self._set_agent_status("Stagnation erkannt, Recovery wird erweitert")
+            else:
+                self._set_agent_status("Tests fehlgeschlagen, Analyse erforderlich")
             self._start_agent_recovery(test_output)
+        elif state == AgentState.FAILED:
+            self.input_bar.set_busy(False)
+            self._set_agent_status("Recovery gestoppt: Reparaturbudget erschöpft")
 
         self.logger.info(
             "Agent verification finished: success=%s, exit_code=%s, state=%s",
@@ -1606,11 +1825,28 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
                 )
 
                 if state == AgentState.ANALYZING:
-                    self._set_agent_status(
-                        "Verifikationsfehler, Analyse erforderlich"
+                    escalation = getattr(
+                        getattr(orchestrator, "run", None),
+                        "recovery_escalation",
+                        None,
                     )
+                    if getattr(escalation, "active", False):
+                        self._set_agent_status(
+                            "Stagnation erkannt, Recovery wird erweitert"
+                        )
+                    else:
+                        self._set_agent_status(
+                            "Verifikationsfehler, Analyse erforderlich"
+                        )
                     self._start_agent_recovery(
                         f"Verification worker error: {error}"
+                    )
+                    return
+
+                if state == AgentState.FAILED:
+                    self.input_bar.set_busy(False)
+                    self._set_agent_status(
+                        "Recovery gestoppt: Reparaturbudget erschöpft"
                     )
                     return
 
@@ -1637,28 +1873,54 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
             self.chat_view.pending.set_content(f"**Fehler:** {error}\n\nStarte Ollama und prüfe die Einstellungen.")
         self.input_bar.set_busy(False)
 
-    def choose_project(self) -> None:
+    def choose_project(self) -> bool:
         folder = QFileDialog.getExistingDirectory(
             self,
             "Projekt auswählen",
             "",
             QFileDialog.Option.DontUseNativeDialog,
         )
-        if folder:
-            self.open_project(folder)
+        if not folder:
+            return False
+        return self.open_project(folder)
 
-    def open_project(self, path: str) -> None:
+    def create_project(self) -> bool:
+        parent = QFileDialog.getExistingDirectory(
+            self,
+            "Speicherort für neues Projekt auswählen",
+            "",
+            QFileDialog.Option.DontUseNativeDialog,
+        )
+        if not parent:
+            return False
+        name, ok = QInputDialog.getText(self, "Neues Projekt", "Projektname:")
+        name = name.strip() if ok else ""
+        if not name:
+            return False
+        if any(char in name for char in '<>:"/\\|?*'):
+            QMessageBox.warning(self, "Neues Projekt", "Der Projektname enthält ungültige Zeichen.")
+            return False
+        target = self.workspace.filesystem.resolve(Path(parent) / name)
+        if self.workspace.filesystem.is_file(target):
+            QMessageBox.warning(self, "Neues Projekt", "Am Ziel existiert bereits eine Datei.")
+            return False
+        if not self.workspace.filesystem.is_directory(target):
+            self.workspace.filesystem.create_directory(target, confirmed=True)
+        return self.open_project(str(target))
+
+    def open_project(self, path: str) -> bool:
         try:
             statistics = self.workspace.open_project(path)
         except ValueError as error:
             self.logger.warning("Project could not be opened: %s", error)
             QMessageBox.warning(self, "Projekt öffnen", str(error))
-            return
+            return False
         if self.workspace.ai_grants() and self.workspace.project_mode() == ProjectMode.READ_ONLY:
             self.workspace.set_project_mode(ProjectMode.WRITE_WITH_CONFIRMATION)
         self.project_panel.set_project(path)
         self.terminal.set_working_directory(path)
         self._update_status(statistics.file_count, "indexiert")
+        return True
 
     def close_project(self) -> None:
         self.workspace.close_project()
@@ -1787,22 +2049,50 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
 
     def show_context(self) -> None:
         project = self.workspace.active_project
-        text = f"Projekt: {project or 'keines'}\nModus: {self.workspace.project_mode().value}\nModell: {self.model}"
+        text = f"Projekt: {project or 'keines'}\nModus: {self.workspace.project_mode().value}\nPrimärmodell: {self.model}"
         QMessageBox.information(self, "Kontext", text)
 
     def _update_status(self, file_count: int = 0, index_state: str = "bereit") -> None:
         project = self.workspace.active_project
         self.workspace_status.setText("Workspace: lokal")
         grant_count = len(self.workspace.ai_grants())
-        self.workspace_status.setText(f"Workspace: lokal | KI-Freigaben: {grant_count}")
+        external_count = len(self.workspace.external_ai_grants())
+        global_text = " | Global lesen" if self.workspace.global_read_access_enabled() else ""
+        self.workspace_status.setText(
+            f"Workspace: lokal | KI-Freigaben: {grant_count}+{external_count}{global_text}"
+        )
         self.index_status.setText(f"Index: {index_state}")
         self.backend_status.setText("Backend: Ollama lokal")
         self.project_status.setText(f"Projekt: {project.name if project else 'keines'}")
-        self.model_status.setText(f"Modell: {self.model}")
+        self.model_status.setText(f"Primärmodell: {self.model}")
         self.ollama_status.setText(f"Ollama: {self.ollama_url}")
         git_available = project and self.workspace.filesystem.is_directory(project / ".git")
         self.git_status.setText(f"Git: {'Projekt' if git_available else '–'}")
         self.file_status.setText(f"Dateien: {file_count}")
+        plugin_rows = self.plugin_manager.snapshot(project_path=project)
+        enabled_count = sum(1 for row in plugin_rows if row["enabled"])
+        auto_count = sum(1 for row in plugin_rows if row["enabled"] and row["project_autonomous"])
+        self.capability_status.setText(
+            f"Plugins: {enabled_count}/{len(plugin_rows)} aktiv | Auto: {auto_count}"
+        )
+
+    def show_access_grants(self) -> None:
+        AccessGrantsDialog(self.workspace, self).exec()
+        self._update_status()
+
+    def show_capabilities(self) -> None:
+        dialog = CapabilitiesDialog(
+            self.plugin_manager,
+            project_path=self.workspace.active_project,
+            parent=self,
+        )
+        if dialog.exec():
+            dialog.apply_preferences()
+            self._save_setting(
+                "plugin_preferences",
+                json.dumps(self.plugin_manager.export_preferences(), ensure_ascii=False),
+            )
+            self._update_status()
 
     def show_settings(self) -> None:
         settings = {row["key"]: row["value"] for row in self.database.fetchall("SELECT key, value FROM settings")}

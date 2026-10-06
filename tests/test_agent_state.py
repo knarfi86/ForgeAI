@@ -99,3 +99,11 @@ def test_invalid_state_is_rejected():
 
     with pytest.raises(ValueError, match="Ungültiger AgentState"):
         run.transition("not-a-state")
+
+def test_partial_completion_state_is_recorded():
+    run = AgentRun("task-1")
+
+    run.partial_complete()
+
+    assert run.state == AgentState.PARTIALLY_COMPLETED
+    assert run.history[-1]["state"] == "partially_completed"
