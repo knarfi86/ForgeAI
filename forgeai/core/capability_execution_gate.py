@@ -27,6 +27,8 @@ class CapabilityGateCheck:
     authorization: CapabilityAuthorization
     available: bool
     status: str
+    action_id: str | None = None
+    manual_approval_used: bool = False
     reason_codes: tuple[str, ...] = ()
     fact_ids: tuple[str, ...] = ()
     verification_profiles: tuple[str, ...] = ()
@@ -59,6 +61,8 @@ class CapabilityExecutionGateResult:
                     "authorization": check.authorization.value,
                     "available": check.available,
                     "status": check.status,
+                    "action_id": check.action_id,
+                    "manual_approval_used": check.manual_approval_used,
                     "reason_codes": check.reason_codes,
                     "fact_ids": check.fact_ids,
                     "verification_profiles": check.verification_profiles,
@@ -105,6 +109,14 @@ class CapabilityExecutionGate:
         checks: list[CapabilityGateCheck] = []
         profiles: list[str] = []
         fact_records: list[FactRecord] = []
+        approved_raw = context.metadata.get("approved_plugin_ids", ())
+        if isinstance(approved_raw, str):
+            approved_plugin_ids = {approved_raw}
+        else:
+            try:
+                approved_plugin_ids = {str(item) for item in approved_raw}
+            except TypeError:
+                approved_plugin_ids = set()
 
         for step in plan.steps:
             manifest = self.manager.registry.get(step.plugin_id)
@@ -113,9 +125,24 @@ class CapabilityExecutionGate:
                 project_path=context.project_path,
             )
             reasons: list[str] = []
+            manual_approval_used = (
+                authorization == CapabilityAuthorization.MANUAL_ONLY
+                and step.plugin_id in approved_plugin_ids
+            )
+            authorization_ready = (
+                authorization == CapabilityAuthorization.ALLOWED
+                or manual_approval_used
+            )
 
-            if authorization != CapabilityAuthorization.ALLOWED:
+            if not authorization_ready:
                 reasons.append(f"authorization:{authorization.value}")
+
+            if step.action_id is not None:
+                try:
+                    action_spec = manifest.action_spec(step.action_id)
+                    action_spec.validate_parameters(step.parameters)
+                except (KeyError, ValueError) as error:
+                    reasons.append(f"action_invalid:{error}")
 
             if not self.manager.has_executor(step.plugin_id):
                 reasons.append("executor_missing")
@@ -127,7 +154,7 @@ class CapabilityExecutionGate:
                     reasons.append(f"dependency_order_invalid:{dependency}")
 
             availability = None
-            if authorization == CapabilityAuthorization.ALLOWED:
+            if authorization_ready:
                 availability = self.manager.evaluate_availability(
                     step.plugin_id,
                     context,
@@ -154,6 +181,8 @@ class CapabilityExecutionGate:
                     authorization=authorization,
                     available=not reasons,
                     status=manifest.status.value,
+                    action_id=step.action_id,
+                    manual_approval_used=manual_approval_used,
                     reason_codes=tuple(dict.fromkeys(reasons)),
                     fact_ids=(availability.fact_ids if availability is not None else ()),
                     verification_profiles=verification_profiles,

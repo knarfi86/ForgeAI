@@ -294,12 +294,37 @@ class AgentOrchestrator:
         return self.run.state
 
     def approve(self) -> AgentState:
-        """Setzt einen freigegebenen Lauf in die Ausführung."""
+        """Setzt einen freigegebenen Lauf in die Ausführung.
+
+        Sichtbare plugin_actions erhalten dabei eine einmalige Freigabe für
+        diesen AgentRun. Globale Plugin-Autonomieeinstellungen bleiben unverändert.
+        """
         if self.run.state != AgentState.APPROVAL_REQUIRED:
             raise RuntimeError(
                 "Eine Freigabe ist im aktuellen Agentenzustand nicht möglich."
             )
 
+        plugin_actions = (
+            list(self.current_plan.plugin_actions)
+            if self.current_plan is not None
+            else []
+        )
+        approved_ids = tuple(
+            dict.fromkeys(
+                str(action.get("plugin_id", "")).strip()
+                for action in plugin_actions
+                if str(action.get("plugin_id", "")).strip()
+            )
+        )
+        self.run.metadata["approved_plugin_ids"] = approved_ids
+        self.run.metadata["approved_plugin_actions"] = tuple(
+            {
+                "plugin_id": str(action.get("plugin_id", "")).strip(),
+                "action": str(action.get("action", "")).strip(),
+                "parameters": dict(action.get("parameters", {})),
+            }
+            for action in plugin_actions
+        )
         return self.begin_execution()
 
     def begin_execution(self) -> AgentState:
@@ -465,11 +490,16 @@ class AgentOrchestrator:
                 raise RuntimeError("Kein CapabilityExecutionPlan für diesen Lauf vorhanden.")
             capability_plan = self.run.capability_plans[-1]
 
+        execution_metadata = dict(metadata or {})
+        if "approved_plugin_ids" not in execution_metadata:
+            approved = self.run.metadata.get("approved_plugin_ids", ())
+            execution_metadata["approved_plugin_ids"] = tuple(approved)
+
         gate = self.preflight_capability_execution(
             plugin_manager,
             capability_plan,
             project_path=project_path,
-            metadata=metadata,
+            metadata=execution_metadata,
         )
         if not gate.ready:
             raise RuntimeError(
@@ -481,7 +511,7 @@ class AgentOrchestrator:
             task_id=self.run.task_id,
             execution_round=self.run.execution_round,
             project_path=project_path or capability_plan.project_path,
-            metadata=dict(metadata or {}),
+            metadata=execution_metadata,
         )
         results = plugin_manager.execute_serial(capability_plan, context)
         history = self.run.metadata.setdefault("capability_execution_history", [])
@@ -490,12 +520,58 @@ class AgentOrchestrator:
                 {
                     "execution_round": self.run.execution_round,
                     "plugins": tuple(step.plugin_id for step in capability_plan.steps),
+                    "actions": tuple(
+                        {
+                            "plugin_id": step.plugin_id,
+                            "action": step.action_id,
+                            "parameters": dict(step.parameters),
+                        }
+                        for step in capability_plan.steps
+                    ),
                     "verification_profiles": gate.verification_profiles,
                     "result_count": len(results),
                 }
             )
         self._record_reality_state("capability_execution")
         return results
+
+
+    def execute_current_plugin_actions(
+        self,
+        plugin_manager: PluginManager,
+        *,
+        project_path: str | None = None,
+    ) -> tuple[object, ...]:
+        """Build and execute the current AgentPlan's explicit plugin_actions."""
+        if self.current_plan is None:
+            raise RuntimeError("Kein aktueller AgentPlan vorhanden.")
+        if not self.current_plan.plugin_actions:
+            return ()
+
+        action_plan = plugin_manager.build_action_execution_plan(
+            self.current_plan.summary,
+            self.current_plan.plugin_actions,
+            project_path=project_path,
+        )
+        if action_plan.blocked:
+            details = []
+            for item in action_plan.blocked:
+                reason = ", ".join(item.reasons) or item.authorization.value
+                details.append(f"{item.plugin_id}: {reason}")
+            raise RuntimeError(
+                "Plugin-Aktionsplan ist nicht ausführbar: " + " | ".join(details)
+            )
+
+        self.run.record_capability_plan(action_plan)
+        return self.execute_capability_plan(
+            plugin_manager,
+            action_plan,
+            project_path=project_path,
+        )
+
+    def pending_verification_profile_ids(self) -> tuple[str, ...]:
+        """Public read-only view of required verification profiles still pending."""
+        return self._pending_required_verification_profiles()
 
 
     def resolve_fact(
@@ -757,12 +833,17 @@ class AgentOrchestrator:
             )
 
         self.current_analysis = repair_analysis
+        repair_kwargs = {
+            "revision_context": self.run.revision_context,
+            "recovery_escalation": self.run.recovery_escalation,
+        }
+        if self.capability_context:
+            repair_kwargs["capability_context"] = self.capability_context
         self.current_plan = self.repairer.repair(
             task,
             repair_analysis,
             project_context,
-            revision_context=self.run.revision_context,
-            recovery_escalation=self.run.recovery_escalation,
+            **repair_kwargs,
         )
         self.current_review = None
         return self.current_plan

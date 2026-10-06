@@ -429,22 +429,54 @@ Die erste technische Implementierung befindet sich in
 
 - `docs/CAPABILITY_PLUGINS.md`
 - `docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
+- `docs/PYTHON_PLUGIN.md`
+- `forgeai/ai/agent_analyzer.py`
+- `forgeai/ai/agent_contracts.py`
 - `forgeai/ai/agent_orchestrator.py`
-- `forgeai/core/plugin_manager.py`
-- `.rossa_install_backups/capability_execution_gate_v1_0_20261006-140412/docs/CAPABILITY_PLUGINS.md`
-- `.rossa_install_backups/capability_execution_gate_v1_0_20261006-140412/docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
-- `.rossa_install_backups/capability_execution_gate_v1_0_20261006-140412/forgeai/ai/agent_orchestrator.py`
-- `.rossa_install_backups/capability_execution_gate_v1_0_20261006-140412/forgeai/core/plugin_manager.py`
+- `forgeai/ai/agent_planner.py`
+- `forgeai/ai/agent_repairer.py`
+- `forgeai/ai/agent_reviewer.py`
+- `forgeai/ai/agent_ui_worker.py`
+- `forgeai/ai/prompts/roles/plan_reviewer.md`
+- `forgeai/ai/prompts/roles/project_planner.md`
+- `forgeai/ai/prompts/roles/repair_planner.md`
 - `forgeai/core/capability_execution_gate.py`
-- `tests/test_capability_execution_gate.py`
+- `forgeai/core/capability_registry.py`
+- `forgeai/core/plugin_manager.py`
+- `forgeai/plugins/python_plugin.py`
+- `forgeai/ui/capabilities_dialog.py`
+- `forgeai/ui/main_window.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/ARCHITECTURE.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/ROADMAP.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/docs/CAPABILITY_PLUGINS.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/docs/CURRENT_STATE.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/docs/PYTHON_PLUGIN.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_analyzer.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_contracts.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_orchestrator.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_planner.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_repairer.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_reviewer.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_ui_worker.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/prompts/roles/plan_reviewer.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/prompts/roles/project_planner.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/prompts/roles/repair_planner.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/core/capability_execution_gate.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/core/capability_registry.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/core/plugin_manager.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/plugins/python_plugin.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ui/capabilities_dialog.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ui/main_window.py`
+- `tests/test_plugin_actions.py`
 
 #### Letzte relevante Commits
 
-- `f78041f (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: integrate capability context into agent planning`
+- `893ea4d (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: add capability execution gate`
+- `f78041f feat: integrate capability context into agent planning`
 - `1c1b1b8 feat: establish ROSSA agent and capability foundation`
 - `fa174bd feat: add recovery context refresh and failure fingerprints`
 - `90b645c fix: improve request routing and reviewer handling`
-- `e259349 fix: stabilize Ollama integration and clean repository`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell
@@ -767,3 +799,19 @@ Primärmodell zurück. Explizite Legacy-/Benutzerrouten bleiben kompatibel und
 
 Details: `docs/MODEL_POLICY.md`.
 <!-- FORGE:MODEL_POLICY:END -->
+
+## Capability Execution Gate
+
+Die optionale Plugin-/Tool-Ausführung besitzt eine harte deterministische Preflight-Grenze.
+Der Capability Planning Context informiert Planner und Reviewer, ist aber noch keine
+Ausführungsfreigabe. Unmittelbar vor einem realen Plugin-Executor prüft
+`CapabilityExecutionGate` erneut Autorisierung/Lifecycle, Abhängigkeiten, Executor,
+FactService-basierte Runtime-Anforderungen und deklarierte Verification Profiles.
+
+Der Core-Dateiworkflow bleibt davon getrennt: normale Planung und Dateiänderungen über
+WorkspaceTools werden nicht durch optionale Plugin-Autorisierung blockiert.
+`PluginManager.execute_serial()` führt das Gate zwingend aus. Der Orchestrator übernimmt
+Gate-Evidence in `AgentRun` und registriert Verification Profiles als Completion-Pflicht.
+Konkrete Plugin-Aktionen werden zukünftig über den expliziten
+`AgentOrchestrator.execute_capability_plan()`-Pfad angebunden, nicht automatisch aus einem
+bloßen Capability-Match heraus.

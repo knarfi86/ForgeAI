@@ -16,6 +16,12 @@ from .model_router import ModelRouter
 from .ollama_client import OllamaClient
 from .ollama_provider import OllamaProvider
 from forgeai.core.test_runner import ProjectTestRunner
+from forgeai.core.plugin_manager import PluginManager
+from forgeai.core.verification_framework import (
+    VerificationContext,
+    VerificationEngine,
+    VerificationRegistry,
+)
 
 
 class AgentWorkflowWorker(QThread):
@@ -150,6 +156,75 @@ class AgentVerificationWorker(QThread):
                 result.output,
             )
 
+        except Exception as error:
+            self.failed.emit(str(error))
+
+
+class AgentCapabilityExecutionWorker(QThread):
+    """Runs explicit AgentPlan plugin_actions behind the execution gate."""
+
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        orchestrator: AgentOrchestrator,
+        plugin_manager: PluginManager,
+        project_path: str | Path | None,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.orchestrator = orchestrator
+        self.plugin_manager = plugin_manager
+        self.project_path = str(project_path) if project_path is not None else None
+
+    def run(self) -> None:
+        try:
+            results = self.orchestrator.execute_current_plugin_actions(
+                self.plugin_manager,
+                project_path=self.project_path,
+            )
+            self.completed.emit(results)
+        except Exception as error:
+            self.failed.emit(str(error))
+
+
+class AgentProfileVerificationWorker(QThread):
+    """Runs required capability VerificationProfiles off the UI thread."""
+
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        registry: VerificationRegistry,
+        profile_ids: tuple[str, ...],
+        *,
+        task_id: str,
+        execution_round: int,
+        project_path: str | Path | None,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.registry = registry
+        self.profile_ids = tuple(profile_ids)
+        self.task_id = task_id
+        self.execution_round = execution_round
+        self.project_path = str(project_path) if project_path is not None else None
+
+    def run(self) -> None:
+        try:
+            engine = VerificationEngine(self.registry)
+            context = VerificationContext(
+                task_id=self.task_id,
+                execution_round=self.execution_round,
+                project_path=self.project_path,
+            )
+            reports = tuple(
+                engine.run(profile_id, context)
+                for profile_id in self.profile_ids
+            )
+            self.completed.emit(reports)
         except Exception as error:
             self.failed.emit(str(error))
 

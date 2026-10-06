@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Mapping
 
 from forgeai.core.capability_registry import (
+    PluginActionSpec,
     PluginCategory,
     PluginFactRequirement,
     PluginManifest,
@@ -114,6 +115,23 @@ class PythonPlugin:
             "code.python.modify",
             "code.python.test",
             "code.python.debug",
+        ),
+        actions=(
+            PluginActionSpec(
+                action_id="inspect",
+                capability_ids=("code.python.debug",),
+                description="Lokalen Python-Interpreter und Laufzeitquelle prüfen.",
+            ),
+            PluginActionSpec(
+                action_id="compile",
+                capability_ids=("code.python.test",),
+                description="Python-Quellen des Projekts syntaktisch kompilieren.",
+            ),
+            PluginActionSpec(
+                action_id="test",
+                capability_ids=("code.python.test",),
+                description="Python-Testbestand des Projekts ausführen.",
+            ),
         ),
         fact_requirements=(
             PluginFactRequirement(
@@ -412,7 +430,11 @@ class PythonPlugin:
                 executable=None,
             )
 
-        action = self._requested_action(context.metadata)
+        action = (
+            step.action_id.strip().casefold()
+            if isinstance(step.action_id, str) and step.action_id.strip()
+            else self._requested_action(context.metadata)
+        )
         project_root = Path(context.project_path) if context.project_path else None
 
         if action == "inspect":

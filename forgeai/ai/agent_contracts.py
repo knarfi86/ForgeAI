@@ -32,10 +32,33 @@ class AgentPlan:
     proposed_changes: list[dict[str, Any]] = field(default_factory=list)
     rationale: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    plugin_actions: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.summary.strip():
             raise ValueError("summary darf nicht leer sein.")
+        if not isinstance(self.plugin_actions, list):
+            raise ValueError("plugin_actions muss eine Liste sein.")
+
+        seen_plugins: set[str] = set()
+        for action in self.plugin_actions:
+            if not isinstance(action, dict):
+                raise ValueError("Jede Plugin-Aktion muss ein Objekt sein.")
+            plugin_id = action.get("plugin_id")
+            action_id = action.get("action")
+            parameters = action.get("parameters", {})
+            if not isinstance(plugin_id, str) or not plugin_id.strip():
+                raise ValueError("Jede Plugin-Aktion benötigt plugin_id.")
+            if not isinstance(action_id, str) or not action_id.strip():
+                raise ValueError("Jede Plugin-Aktion benötigt action.")
+            if not isinstance(parameters, dict):
+                raise ValueError("Plugin-Aktionsparameter müssen ein Objekt sein.")
+            plugin_id = plugin_id.strip()
+            if plugin_id in seen_plugins:
+                raise ValueError(
+                    f"Plugin {plugin_id!r} darf pro AgentPlan nur eine Aktion besitzen."
+                )
+            seen_plugins.add(plugin_id)
 
 
 @dataclass

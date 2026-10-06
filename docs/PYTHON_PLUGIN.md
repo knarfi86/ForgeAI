@@ -73,29 +73,35 @@ Typische Cache-, venv-, Build- und VCS-Verzeichnisse werden von der Quellprüfun
 ausgeschlossen. Die Ergebnisse sind `technical` / `FACT` Evidence und werden
 nicht durch LLM-Einschätzung ersetzt.
 
-## Serieller Executor
+## Serieller Executor und Action Contract
 
-Der Executor kennt nur drei Aktionen:
+Das Manifest deklariert über `PluginActionSpec` genau drei Aktionen:
 
 - `inspect`: Interpreter und Version beobachten;
 - `compile`: Python-Projektdateien kompilieren;
 - `test`: pytest nutzen, falls im ausgewählten Interpreter vorhanden, sonst
   `unittest discover`.
 
-Ohne explizite Aktion gilt immer `inspect`. Das verhindert, dass die bloße
-Auswahl des Plugins ungewollt Tests oder sonstige Arbeit startet.
+Alle drei Aktionen akzeptieren aktuell keine freien Parameter. Der Planner darf
+die Action-IDs nur als strukturierte `plugin_actions` im AgentPlan anfordern.
+Freie Shell-Kommandos oder erfundene Aktionsnamen werden nicht akzeptiert.
 
-Eine Aktion kann im ExecutionContext beispielsweise über
-`metadata["plugin_actions"]["python"]` angefordert werden. Freie Shell-Kommandos
-oder LLM-generierte Befehlsstrings werden nicht akzeptiert.
+Der Executor liest die freigegebene Aktion direkt aus dem
+`CapabilityPlanStep.action_id`. Die ältere Übergabe über
+`ExecutionContext.metadata["plugin_actions"]["python"]` bleibt nur als
+Kompatibilitätsfallback erhalten. Ohne explizite Aktion gilt weiterhin
+`inspect`.
 
 ## Benutzerfreigaben
 
 Das Built-in-Plugin wird beim Forge-Start registriert und ist grundsätzlich
 aktiviert. Die autonome Nutzung bleibt jedoch standardmäßig ausgeschaltet.
-Forge darf das Plugin erst autonom in einen ausführbaren Capability-Plan
-aufnehmen, wenn der Benutzer global oder für das aktuelle Projekt die autonome
-Nutzung freigibt.
+Forge darf das Plugin autonom in einen ausführbaren Capability-Plan aufnehmen,
+wenn der Benutzer global oder für das aktuelle Projekt die autonome Nutzung
+freigibt. Im Standardzustand `manual_only` darf eine konkrete Aktion trotzdem
+sichtbar im AgentPlan stehen. Bestätigt der Benutzer diesen Plan, erhält exakt
+diese Plugin-ID eine einmalige Freigabe für den aktuellen AgentRun. Die globale
+Autonomieeinstellung bleibt unverändert.
 
 Unter `Werkzeuge -> Plugins & Fähigkeiten` zeigt die UI zusätzlich den realen
 Availability-Status. Dieser Status wird aus den Fact-Anforderungen des Plugins

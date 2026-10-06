@@ -73,6 +73,7 @@ class AgentReviewer:
             {
                 "summary": plan.summary,
                 "proposed_changes": plan.proposed_changes,
+                "plugin_actions": plan.plugin_actions,
                 "rationale": plan.rationale,
             },
             ensure_ascii=False,
@@ -99,7 +100,17 @@ class AgentReviewer:
                 ),
                 (
                     "Beanstande nur eine konkrete Abhängigkeit von einem nicht "
-                    "autonom nutzbaren Plugin, nicht gewöhnliche Dateiänderungen."
+                    "autonom nutzbaren Plugin, wenn der Plan die nötige "
+                    "Benutzerfreigabe ignoriert; nicht gewöhnliche Dateiänderungen."
+                ),
+                (
+                    "Prüfe plugin_actions gegen die deklarierten action_id-Werte "
+                    "im CAPABILITY_CONTEXT. manual_only ist zulässig, wenn die "
+                    "Aktion sichtbar im Plan steht und vom Benutzer freigegeben wird."
+                ),
+                (
+                    "disabled, planned oder unavailable dürfen nicht als ausführbare "
+                    "Plugin-Aktionen genehmigt werden."
                 ),
                 "",
                 f"AGENT_PLAN:\n{plan_json}",

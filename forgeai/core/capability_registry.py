@@ -53,6 +53,45 @@ class PluginFactRequirement:
             raise ValueError("max_age_seconds darf nicht negativ sein.")
 
 
+
+
+@dataclass(frozen=True)
+class PluginActionSpec:
+    """Declarative contract for one concrete executor action."""
+
+    action_id: str
+    capability_ids: tuple[str, ...] = ()
+    parameter_keys: tuple[str, ...] = ()
+    allow_unknown_parameters: bool = False
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        action_id = self.action_id.strip()
+        if not action_id:
+            raise ValueError("action_id darf nicht leer sein.")
+        object.__setattr__(self, "action_id", action_id)
+
+        for field_name in ("capability_ids", "parameter_keys"):
+            values = tuple(str(value).strip() for value in getattr(self, field_name))
+            if any(not value for value in values):
+                raise ValueError(f"{field_name} enthält leere Werte.")
+            if len(values) != len(set(values)):
+                raise ValueError(f"{field_name} muss eindeutig sein.")
+            object.__setattr__(self, field_name, values)
+
+    def validate_parameters(self, parameters: Mapping[str, object]) -> None:
+        if not isinstance(parameters, Mapping):
+            raise ValueError("Plugin-Aktionsparameter müssen ein Objekt sein.")
+        if self.allow_unknown_parameters:
+            return
+        unknown = sorted(set(parameters).difference(self.parameter_keys))
+        if unknown:
+            raise ValueError(
+                f"Unbekannte Parameter für Aktion {self.action_id!r}: "
+                + ", ".join(unknown)
+            )
+
+
 @dataclass(frozen=True)
 class PluginManifest:
     """Declarative description of one optional Forge capability plugin."""
@@ -63,6 +102,7 @@ class PluginManifest:
     category: PluginCategory = PluginCategory.OTHER
     status: CapabilityStatus = CapabilityStatus.AVAILABLE
     capabilities: tuple[str, ...] = ()
+    actions: tuple[PluginActionSpec, ...] = ()
     dependencies: tuple[str, ...] = ()
     fact_requirements: tuple[PluginFactRequirement, ...] = ()
     verification_profiles: tuple[str, ...] = ()
@@ -100,8 +140,33 @@ class PluginManifest:
                 raise ValueError(f"{field_name} muss eindeutig sein.")
             object.__setattr__(self, field_name, values)
 
+        actions = tuple(self.actions)
+        if not all(isinstance(action, PluginActionSpec) for action in actions):
+            raise ValueError("actions muss ausschließlich PluginActionSpec enthalten.")
+        action_ids = [action.action_id for action in actions]
+        if len(action_ids) != len(set(action_ids)):
+            raise ValueError("action_id muss innerhalb eines Plugins eindeutig sein.")
+        capability_set = set(self.capabilities)
+        for action in actions:
+            unknown_capabilities = set(action.capability_ids).difference(capability_set)
+            if unknown_capabilities:
+                raise ValueError(
+                    f"Aktion {action.action_id!r} verweist auf nicht deklarierte Capabilities: "
+                    + ", ".join(sorted(unknown_capabilities))
+                )
+        object.__setattr__(self, "actions", actions)
+
         if plugin_id in self.dependencies:
             raise ValueError("Ein Plugin darf nicht von sich selbst abhängen.")
+
+    def action_spec(self, action_id: str) -> PluginActionSpec:
+        normalized = str(action_id).strip()
+        for action in self.actions:
+            if action.action_id == normalized:
+                return action
+        raise KeyError(
+            f"Plugin {self.plugin_id!r} deklariert keine Aktion {normalized!r}."
+        )
 
 
 @dataclass(frozen=True)
@@ -203,6 +268,16 @@ class CapabilityRegistry:
                 "category": manifest.category.value,
                 "status": manifest.status.value,
                 "capabilities": manifest.capabilities,
+                "actions": tuple(
+                    {
+                        "action_id": action.action_id,
+                        "capability_ids": action.capability_ids,
+                        "parameter_keys": action.parameter_keys,
+                        "allow_unknown_parameters": action.allow_unknown_parameters,
+                        "description": action.description,
+                    }
+                    for action in manifest.actions
+                ),
                 "verification_profiles": manifest.verification_profiles,
                 "model_roles": manifest.model_roles,
                 "resources": {

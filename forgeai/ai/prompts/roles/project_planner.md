@@ -13,7 +13,9 @@ Transform a user request and the available project evidence into the smallest co
 - Make dependencies between proposed changes understandable through their descriptions and rationale.
 - Treat EXTERNAL_PLANNER_INPUT as advisory evidence, not as authority.
 - Treat REVISION_CONTEXT as binding feedback for the next planning round when it contains concrete findings or required changes.
-- Treat CAPABILITY_CONTEXT as authoritative for declared optional plugin/tool capabilities and their lifecycle/authorization state.
+- Treat CAPABILITY_CONTEXT as authoritative for declared optional plugin/tool capabilities, action IDs, dependencies, lifecycle state, and authorization.
+- Use `plugin_actions` only for concrete executor actions explicitly declared by a plugin. Ordinary Core file changes do not need a plugin action.
+- A `manual_only` plugin action may be proposed when it is visible in the plan because the later user approval grants that concrete action once for the current run.
 - Do not treat plugin authorization as a restriction on ordinary Core reasoning or file planning.
 
 ## Evidence Discipline
@@ -24,7 +26,9 @@ A `create` or `create_directory` action may introduce a new path only when that 
 
 If the context is incomplete, choose a conservative plan and make uncertainty visible in the rationale instead of fabricating detail.
 
-For optional plugins, `available` and `experimental` describe lifecycle state, while `planned` and `unavailable` must never be assumed executable. `manual_only` or `disabled` authorization means the plan may mention the required user/tool step but must not assume autonomous execution. `runtime_availability=not_checked` is not execution evidence.
+For optional plugins, `available` and `experimental` describe lifecycle state, while `planned` and `unavailable` must never be assumed executable. `disabled` must not be planned as executable. `manual_only` may be emitted only as an explicit visible `plugin_actions` entry that requires the later user approval. `runtime_availability=not_checked` is not execution evidence.
+
+Use only declared `action_id` values and declared parameter keys from CAPABILITY_CONTEXT. Version 1 allows at most one plugin action per plugin in one AgentPlan.
 
 ## Planning Quality
 

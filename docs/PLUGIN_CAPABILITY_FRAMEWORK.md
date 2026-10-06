@@ -161,3 +161,47 @@ Vor `PluginManager.execute_serial()` werden deshalb erneut geprüft:
 die Prüfung nicht versehentlich umgehen. Der Orchestrator kann den Preflight zusätzlich
 vorab auswerten, Evidence in `AgentRun.fact_history` übernehmen und Verification
 Profiles für das Completion Gate verpflichtend machen.
+
+## PluginActionSpec und operativer Planvertrag
+
+Der Capability-Kontext enthält jetzt nicht nur abstrakte Capability-IDs, sondern
+auch konkrete, maschinenlesbare Aktionen. `PluginActionSpec` deklariert:
+
+- stabile `action_id`;
+- zugehörige Capability-IDs;
+- erlaubte Parameter-Schlüssel;
+- Beschreibung der Aktion.
+
+Der AgentPlan besitzt dafür `plugin_actions`. Der Planner darf nur deklarierte
+Aktionen und Parameter verwenden. Der Reviewer sieht dieselben Verträge und
+prüft den Plan dagegen. Der `PluginManager` baut aus den freigegebenen Aktionen
+einen separaten `CapabilityExecutionPlan`, bevor das bestehende
+`CapabilityExecutionGate` erneut Autorisierung, Runtime-Fakten, Executor,
+Abhängigkeiten und Verification Profiles prüft.
+
+### Einmalfreigabe für manual_only
+
+Eine globale Einstellung `manual_only` bleibt unverändert. Die sichtbare
+Benutzerfreigabe eines AgentPlans erzeugt lediglich eine laufzeitgebundene
+Freigabe in `AgentRun.metadata["approved_plugin_ids"]`. Das Gate akzeptiert
+diese Freigabe nur für die im Plan sichtbaren Plugin-IDs des aktuellen Laufs.
+`disabled`, `planned` und `unavailable` können dadurch nicht überstimmt werden.
+
+### Ausführungs- und Verifikationsreihenfolge
+
+Für Version 1 gilt bewusst eine einfache Reihenfolge:
+
+1. Core-Dateiänderungen planen, reviewen und anwenden;
+2. explizite `plugin_actions` seriell durch das Execution Gate ausführen;
+3. reguläre technische Projektverifikation ausführen;
+4. alle Capability-spezifischen Verification Profiles ausführen;
+5. Evidence zentral durch den Completion Gate bewerten.
+
+Ein Plan ohne Dateiänderungen kann direkt bei Schritt 2 beginnen. Ein Plan ohne
+Plugin-Aktionen überspringt Schritt 2 vollständig. Dadurch bleibt der bestehende
+Core-Dateiworkflow unverändert.
+
+Das Python-Referenzplugin deklariert aktuell die Aktionen `inspect`, `compile`
+und `test`. Sein Executor liest die konkrete Aktion direkt aus dem
+`CapabilityPlanStep`; alte metadata-basierte Aufrufe bleiben als
+Kompatibilitätsfallback erhalten.

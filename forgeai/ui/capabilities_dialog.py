@@ -39,7 +39,8 @@ class CapabilitiesDialog(QDialog):
         intro = QLabel(
             "Forge wählt benötigte Fähigkeiten innerhalb deiner Freigaben automatisch aus. "
             "Aktivieren bedeutet verfügbar; autonome Nutzung erlaubt Forge die selbstständige Auswahl. "
-            "Die Ausführung erfolgt zunächst strikt nacheinander."
+            "Manual-only-Aktionen können einmalig über einen sichtbaren Agentenplan freigegeben werden. "
+            "Die Ausführung erfolgt strikt nacheinander."
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -68,7 +69,7 @@ class CapabilitiesDialog(QDialog):
             ]
             if self.project_path:
                 columns.append("Projekt-Auto")
-            columns.extend(["Fähigkeiten", "Prüfprofile", "Ressourcen"])
+            columns.extend(["Fähigkeiten", "Aktionen", "Prüfprofile", "Ressourcen"])
 
             table = QTableWidget(len(manifests), len(columns))
             table.setHorizontalHeaderLabels(columns)
@@ -129,6 +130,11 @@ class CapabilitiesDialog(QDialog):
                 table.setItem(
                     row,
                     offset + 1,
+                    QTableWidgetItem(", ".join(action.action_id for action in manifest.actions) or "–"),
+                )
+                table.setItem(
+                    row,
+                    offset + 2,
                     QTableWidgetItem(", ".join(manifest.verification_profiles) or "–"),
                 )
                 resource_parts: list[str] = []
@@ -139,7 +145,7 @@ class CapabilitiesDialog(QDialog):
                 if manifest.resources.min_ram_mb:
                     resource_parts.append(f"RAM ≥ {manifest.resources.min_ram_mb} MB")
                 resource_parts.extend(manifest.resources.exclusive_resources)
-                table.setItem(row, offset + 2, QTableWidgetItem(", ".join(resource_parts) or "CPU/normal"))
+                table.setItem(row, offset + 3, QTableWidgetItem(", ".join(resource_parts) or "CPU/normal"))
 
                 self._rows[manifest.plugin_id] = (enabled, autonomous, project_auto)
 

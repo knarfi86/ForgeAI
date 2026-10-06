@@ -16,7 +16,13 @@ from PySide6.QtWidgets import (
 from forgeai.ai.agent_contracts import AgentTask
 from forgeai.ai.agent_orchestrator import AgentOrchestrator
 from forgeai.ai.agent_state import AgentRun, AgentState
-from forgeai.ai.agent_ui_worker import AgentRecoveryWorker, AgentVerificationWorker, AgentWorkflowWorker
+from forgeai.ai.agent_ui_worker import (
+    AgentCapabilityExecutionWorker,
+    AgentProfileVerificationWorker,
+    AgentRecoveryWorker,
+    AgentVerificationWorker,
+    AgentWorkflowWorker,
+)
 from forgeai.ai.change_actions import extract_change_previews
 from forgeai.ai.ollama_client import OllamaClient
 from forgeai.ai.prompts import SYSTEM_PROMPT, PROMPT_CREATION_INSTRUCTIONS
@@ -101,6 +107,8 @@ class MainWindow(QMainWindow):
         self._pending_user_request = ""
         self._agent_worker: AgentWorkflowWorker | None = None
         self._agent_verification_worker: AgentVerificationWorker | None = None
+        self._agent_capability_worker: AgentCapabilityExecutionWorker | None = None
+        self._agent_profile_verification_worker: AgentProfileVerificationWorker | None = None
         self._agent_recovery_worker: AgentRecoveryWorker | None = None
         self._agent_orchestrator: AgentOrchestrator | None = None
         self._agent_task: AgentTask | None = None
@@ -1537,10 +1545,136 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
                 self._agent_orchestrator is not None
                 and self._agent_orchestrator.run.state == AgentState.EXECUTING
                 and self._agent_verification_worker is None
+                and self._agent_capability_worker is None
             ):
-                self._start_agent_verification()
+                self._continue_agent_execution_after_changes()
 
         return True, f"{applied} Dateiänderung(en) wurden angewendet."
+
+    def _continue_agent_execution_after_changes(self) -> None:
+        plan = self._agent_plan
+        if plan is not None and getattr(plan, "plugin_actions", None):
+            self._start_agent_capability_execution()
+        else:
+            self._start_agent_verification()
+
+    def _start_agent_capability_execution(self) -> None:
+        if self._agent_orchestrator is None or self._agent_plan is None:
+            return
+        if not getattr(self._agent_plan, "plugin_actions", None):
+            self._start_agent_verification()
+            return
+        if self._agent_capability_worker is not None:
+            return
+
+        self._set_agent_status("führe Plugin-Aktion aus")
+        self.input_bar.set_busy(True)
+        worker = AgentCapabilityExecutionWorker(
+            self._agent_orchestrator,
+            self.plugin_manager,
+            self.workspace.active_project,
+            parent=self,
+        )
+        self._agent_capability_worker = worker
+        worker.completed.connect(self._agent_capability_execution_finished)
+        worker.failed.connect(self._agent_capability_execution_failed)
+        worker.start()
+
+    def _agent_capability_execution_finished(self, results) -> None:
+        worker = self._agent_capability_worker
+        self._agent_capability_worker = None
+        if worker is not None:
+            worker.deleteLater()
+        results = tuple(results or ())
+        self.logger.info("Plugin actions completed: count=%s", len(results))
+
+        action_rows = list(getattr(self._agent_plan, "plugin_actions", []) or [])
+        report_lines = ["### Plugin-Ausführung"]
+        for index, result in enumerate(results):
+            action = action_rows[index] if index < len(action_rows) else {}
+            plugin_id = action.get("plugin_id", f"plugin-{index + 1}")
+            action_id = action.get("action", "action")
+            output = (
+                result.get("output", "")
+                if isinstance(result, dict)
+                else getattr(result, "output", "")
+            )
+            report_lines.append(f"**{plugin_id}/{action_id}:** erfolgreich")
+            if output:
+                rendered = str(output)
+                if len(rendered) > 4000:
+                    rendered = rendered[:4000] + "\n… Ausgabe gekürzt"
+                report_lines.append(f"```text\n{rendered}\n```")
+        report = "\n\n".join(report_lines)
+        if self.chat_id is not None:
+            self.chat_view.add_message("assistant", report)
+            self.history.add_message(self.chat_id, "assistant", report)
+
+        self._set_agent_status("Plugin-Aktion abgeschlossen, verifiziere")
+        orchestrator = self._agent_orchestrator
+        has_file_changes = bool(
+            self._agent_plan is not None
+            and getattr(self._agent_plan, "proposed_changes", None)
+        )
+        if (
+            not has_file_changes
+            and orchestrator is not None
+            and orchestrator.run.required_verification_profiles
+        ):
+            try:
+                orchestrator.begin_testing()
+            except RuntimeError as error:
+                self.logger.error("Capability profile testing could not start: %s", error)
+                self.input_bar.set_busy(False)
+                self._set_agent_status("Capability-Verifikation nicht gestartet")
+                return
+            self._start_required_profile_verification(
+                orchestrator.pending_verification_profile_ids()
+            )
+            return
+
+        self._start_agent_verification()
+
+    def _agent_capability_execution_failed(self, error: str) -> None:
+        worker = self._agent_capability_worker
+        self._agent_capability_worker = None
+        if worker is not None:
+            worker.deleteLater()
+
+        orchestrator = self._agent_orchestrator
+        self.logger.error("Plugin action execution failed: %s", error)
+        if orchestrator is None:
+            self.input_bar.set_busy(False)
+            self._set_agent_status("Plugin-Aktion fehlgeschlagen")
+            return
+
+        if "Execution Gate" in error or "nicht ausführbar" in error:
+            orchestrator.fail()
+            self.input_bar.set_busy(False)
+            self._set_agent_status("Plugin-Aktion blockiert")
+            if self.chat_view.pending:
+                self.chat_view.pending.set_content(f"**Plugin-Aktion blockiert:** {error}")
+            return
+
+        try:
+            orchestrator.begin_testing()
+            state = orchestrator.handle_verification_result(
+                False,
+                f"Plugin execution failed: {error}",
+            )
+        except RuntimeError as processing_error:
+            orchestrator.fail()
+            self.input_bar.set_busy(False)
+            self._set_agent_status("Plugin-Aktion fehlgeschlagen")
+            self.logger.error("Plugin failure could not enter recovery: %s", processing_error)
+            return
+
+        if state == AgentState.ANALYZING:
+            self._set_agent_status("Plugin-Aktion fehlgeschlagen, analysiere")
+            self._start_agent_recovery(f"Plugin execution failed: {error}")
+        else:
+            self.input_bar.set_busy(False)
+            self._set_agent_status("Plugin-Aktion fehlgeschlagen")
 
     def _start_agent_verification(self) -> None:
         """Startet die technische Verifikation nach einem Agent-Apply."""
@@ -1603,8 +1737,13 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
         if state == AgentState.COMPLETED:
             self._set_agent_status("CompletionGate: Abschluss verifiziert")
         elif state == AgentState.COMPLETION_CHECKING:
-            self.input_bar.set_busy(False)
-            self._set_agent_status("Technisch bestanden, weitere Evidence ausstehend")
+            pending_profiles = orchestrator.pending_verification_profile_ids()
+            if pending_profiles:
+                self._set_agent_status("Technisch bestanden, prüfe Capability-Profile")
+                self._start_required_profile_verification(pending_profiles)
+            else:
+                self.input_bar.set_busy(False)
+                self._set_agent_status("Technisch bestanden, weitere Evidence ausstehend")
         elif state == AgentState.PARTIALLY_COMPLETED:
             self.input_bar.set_busy(False)
             self._set_agent_status("Auftrag nur teilweise verifiziert")
@@ -1629,6 +1768,76 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
             exit_code,
             state.value,
         )
+
+
+    def _start_required_profile_verification(
+        self,
+        profile_ids: tuple[str, ...] | None = None,
+    ) -> None:
+        orchestrator = self._agent_orchestrator
+        if orchestrator is None:
+            return
+        if self._agent_profile_verification_worker is not None:
+            return
+
+        pending = tuple(profile_ids or orchestrator.pending_verification_profile_ids())
+        if not pending:
+            return
+
+        worker = AgentProfileVerificationWorker(
+            self.verification_registry,
+            pending,
+            task_id=orchestrator.run.task_id,
+            execution_round=orchestrator.run.execution_round,
+            project_path=self.workspace.active_project,
+            parent=self,
+        )
+        self._agent_profile_verification_worker = worker
+        self.input_bar.set_busy(True)
+        worker.completed.connect(self._agent_profile_verification_finished)
+        worker.failed.connect(self._agent_profile_verification_failed)
+        worker.start()
+
+    def _agent_profile_verification_finished(self, reports) -> None:
+        worker = self._agent_profile_verification_worker
+        self._agent_profile_verification_worker = None
+        if worker is not None:
+            worker.deleteLater()
+
+        orchestrator = self._agent_orchestrator
+        if orchestrator is None:
+            return
+        try:
+            for report in reports or ():
+                orchestrator.handle_verification_report(report, evaluate=False)
+            state = orchestrator.evaluate_completion()
+        except (RuntimeError, ValueError, TypeError) as error:
+            self.logger.error("Capability profile verification failed: %s", error)
+            self.input_bar.set_busy(False)
+            self._set_agent_status("Capability-Verifikation fehlgeschlagen")
+            return
+
+        self.input_bar.set_busy(False)
+        if state == AgentState.COMPLETED:
+            self._set_agent_status("CompletionGate: Abschluss verifiziert")
+        elif state == AgentState.PARTIALLY_COMPLETED:
+            self._set_agent_status("Auftrag nur teilweise verifiziert")
+        elif state == AgentState.FAILED:
+            self._set_agent_status("Capability-Verifikation fehlgeschlagen")
+        else:
+            self._set_agent_status("Weitere Evidence ausstehend")
+
+    def _agent_profile_verification_failed(self, error: str) -> None:
+        worker = self._agent_profile_verification_worker
+        self._agent_profile_verification_worker = None
+        if worker is not None:
+            worker.deleteLater()
+        self.logger.error("Capability profile worker failed: %s", error)
+        if self._agent_orchestrator is not None:
+            self._agent_orchestrator.fail()
+        self.input_bar.set_busy(False)
+        self._set_agent_status("Capability-Verifikation fehlgeschlagen")
+
 
     def _start_agent_recovery(self, test_output: str) -> None:
         """Startet Analyse und Reparatur nach einem fehlgeschlagenen Testlauf."""
@@ -1726,7 +1935,7 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
         dialog_title: str,
         dialog_intro: str,
     ) -> None:
-        if not plan.proposed_changes:
+        if not plan.proposed_changes and not getattr(plan, "plugin_actions", None):
             if self._agent_orchestrator is not None:
                 try:
                     self._agent_orchestrator.complete_without_changes()
@@ -1764,6 +1973,20 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
                 f"- {action} {path}: {description}"
             )
 
+        plugin_lines = []
+        for plugin_action in getattr(plan, "plugin_actions", []) or []:
+            plugin_id = plugin_action.get("plugin_id", "unbekannt")
+            action_id = plugin_action.get("action", "unbekannt")
+            parameters = plugin_action.get("parameters", {})
+            parameter_text = (
+                json.dumps(parameters, ensure_ascii=False, sort_keys=True)
+                if parameters
+                else "{}"
+            )
+            plugin_lines.append(
+                f"- {plugin_id}/{action_id} {parameter_text}"
+            )
+
         plan_message = (
             f"### Agent-Plan\n\n"
             f"**Zusammenfassung:** {plan.summary}\n\n"
@@ -1772,6 +1995,12 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
                 "\n".join(changes)
                 if changes
                 else "- Keine konkreten änderungen"
+            )
+            + "\n\n**Plugin-Aktionen:**\n"
+            + (
+                "\n".join(plugin_lines)
+                if plugin_lines
+                else "- Keine Plugin-Aktionen"
             )
             + f"\n\n**Begründung:** {plan.rationale}"
         )
@@ -1795,7 +2024,8 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
             (
                 f"{dialog_intro}\n\n"
                 f"{plan.summary}\n\n"
-                "Sollen die geplanten änderungen ausgeführt werden?"
+                "Sollen die geplanten Änderungen und sichtbaren Plugin-Aktionen ausgeführt werden?\n"
+                "Die Freigabe für manual_only-Plugins gilt nur für diesen Plan."
             ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
@@ -1813,7 +2043,12 @@ Keine Markdown-Codebl\u00f6cke und keine zus\u00e4tzlichen Erkl\u00e4rungen au\u
 
         self._agent_orchestrator.approve()
         self._set_agent_status("führe Plan aus")
-        self._start_agent_coder_stream()
+        if plan.proposed_changes:
+            self._start_agent_coder_stream()
+        elif getattr(plan, "plugin_actions", None):
+            self._start_agent_capability_execution()
+        else:
+            self._start_agent_verification()
 
     def _agent_verification_failed(self, error: str) -> None:
         worker = self._agent_verification_worker

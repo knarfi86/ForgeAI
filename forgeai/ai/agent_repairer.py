@@ -32,6 +32,7 @@ class AgentRepairer:
         project_context: str = "",
         revision_context: list[dict[str, Any]] | None = None,
         recovery_escalation: RecoveryEscalationDecision | None = None,
+        capability_context: dict[str, Any] | None = None,
     ) -> AgentPlan:
         prompt = self._build_prompt(
             task=task,
@@ -39,6 +40,7 @@ class AgentRepairer:
             project_context=project_context,
             revision_context=revision_context,
             recovery_escalation=recovery_escalation,
+            capability_context=capability_context or {},
         )
 
         response = self.model_router.generate(
@@ -56,6 +58,7 @@ class AgentRepairer:
         project_context: str,
         revision_context: list[dict[str, Any]] | None = None,
         recovery_escalation: RecoveryEscalationDecision | None = None,
+        capability_context: dict[str, Any] | None = None,
     ) -> str:
         role_prompt = load_role_prompt("repair_planner")
         analysis_json = json.dumps(
@@ -83,6 +86,12 @@ class AgentRepairer:
                 indent=2,
             )
 
+        capability_json = (
+            json.dumps(capability_context or {}, ensure_ascii=False, indent=2)
+            if capability_context
+            else "Kein Capability-Kontext bereitgestellt."
+        )
+
         repair_input = "\n".join(
             [
                 "## Current Repair Planning Input",
@@ -98,6 +107,15 @@ class AgentRepairer:
                 "",
                 f"RECOVERY_ESCALATION:\n{escalation_text}",
                 "",
+                f"CAPABILITY_CONTEXT:\n{capability_json}",
+                "",
+                (
+                    "Nutze plugin_actions nur für konkrete deklarierte Aktionen aus "
+                    "CAPABILITY_CONTEXT. Normale Datei-Reparaturen benötigen keine "
+                    "Plugin-Aktion. manual_only kann sichtbar geplant und einmalig "
+                    "durch Benutzerfreigabe autorisiert werden."
+                ),
+                "",
                 "## Repair Planning Contract",
                 "",
                 "Jede geplante Änderung muss eine unterstützte Dateioperation verwenden.",
@@ -112,6 +130,13 @@ class AgentRepairer:
                 '      "action": "replace",',
                 '      "path": "relative/path.py",',
                 '      "description": "Beschreibung der Reparatur"',
+                "    }",
+                "  ],",
+                '  "plugin_actions": [',
+                "    {",
+                '      "plugin_id": "python",',
+                '      "action": "test",',
+                '      "parameters": {}',
                 "    }",
                 "  ],",
                 '  "rationale": "Begründung"',
@@ -140,6 +165,7 @@ class AgentRepairer:
 
         summary = data.get("summary")
         proposed_changes = data.get("proposed_changes", [])
+        plugin_actions = data.get("plugin_actions", [])
         rationale = data.get("rationale", "")
 
         if not isinstance(summary, str) or not summary.strip():
@@ -168,6 +194,9 @@ class AgentRepairer:
                         f"Jede geplante Reparatur benötigt '{field}'."
                     )
 
+        if not isinstance(plugin_actions, list):
+            raise ValueError("'plugin_actions' muss eine Liste sein.")
+
         if not isinstance(rationale, str):
             raise ValueError("'rationale' muss ein String sein.")
 
@@ -176,4 +205,5 @@ class AgentRepairer:
             proposed_changes=proposed_changes,
             rationale=rationale,
             metadata={"source": "agent_repairer"},
+            plugin_actions=plugin_actions,
         )

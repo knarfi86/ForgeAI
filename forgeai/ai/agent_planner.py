@@ -87,6 +87,18 @@ class AgentPlanner:
                             ],
                         },
                     },
+                    "plugin_actions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "plugin_id": {"type": "string"},
+                                "action": {"type": "string"},
+                                "parameters": {"type": "object"},
+                            },
+                            "required": ["plugin_id", "action", "parameters"],
+                        },
+                    },
                     "rationale": {
                         "type": "string",
                     },
@@ -94,6 +106,7 @@ class AgentPlanner:
                 "required": [
                     "summary",
                     "proposed_changes",
+                    "plugin_actions",
                     "rationale",
                 ],
             },
@@ -145,6 +158,15 @@ class AgentPlanner:
                         "runtime_availability=not_checked ist kein Beweis für reale "
                         "Laufzeitverfügbarkeit."
                     ),
+                    (
+                        "Nutze plugin_actions nur für konkrete, deklarierte Aktionen "
+                        "aus CAPABILITY_CONTEXT. Normale Dateiänderungen benötigen "
+                        "keine Plugin-Aktion."
+                    ),
+                    (
+                        "manual_only darf als sichtbare Plugin-Aktion geplant werden; "
+                        "die spätere Benutzerfreigabe gilt nur einmal für diesen Plan."
+                    ),
                 ]
             )
 
@@ -193,6 +215,13 @@ class AgentPlanner:
                 '      "description": "Beschreibung der geplanten Änderung"',
                 "    }",
                 "  ],",
+                '  "plugin_actions": [',
+                "    {",
+                '      "plugin_id": "python",',
+                '      "action": "test",',
+                '      "parameters": {}',
+                "    }",
+                "  ],",
                 '  "rationale": "Begründung des gewählten Ansatzes"',
                 "}",
                 "",
@@ -219,6 +248,7 @@ class AgentPlanner:
 
         summary = data.get("summary")
         proposed_changes = data.get("proposed_changes", [])
+        plugin_actions = data.get("plugin_actions", [])
         rationale = data.get("rationale", "")
 
         if not isinstance(summary, str) or not summary.strip():
@@ -255,6 +285,9 @@ class AgentPlanner:
                         f"Jede geplante Änderung benötigt '{field}'."
                     )
 
+        if not isinstance(plugin_actions, list):
+            raise ValueError("'plugin_actions' muss eine Liste sein.")
+
         if not isinstance(rationale, str):
             raise ValueError("'rationale' muss ein String sein.")
 
@@ -265,4 +298,5 @@ class AgentPlanner:
             metadata={
                 "source": "agent_planner",
             },
+            plugin_actions=plugin_actions,
         )

@@ -430,18 +430,50 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 - `docs/CAPABILITY_PLUGINS.md`
 - `docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
+- `docs/PYTHON_PLUGIN.md`
+- `forgeai/ai/agent_analyzer.py`
+- `forgeai/ai/agent_contracts.py`
 - `forgeai/ai/agent_orchestrator.py`
-- `forgeai/core/plugin_manager.py`
-- `.rossa_install_backups/capability_execution_gate_v1_0_20261006-140412/docs/CAPABILITY_PLUGINS.md`
-- `.rossa_install_backups/capability_execution_gate_v1_0_20261006-140412/docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
-- `.rossa_install_backups/capability_execution_gate_v1_0_20261006-140412/forgeai/ai/agent_orchestrator.py`
-- `.rossa_install_backups/capability_execution_gate_v1_0_20261006-140412/forgeai/core/plugin_manager.py`
+- `forgeai/ai/agent_planner.py`
+- `forgeai/ai/agent_repairer.py`
+- `forgeai/ai/agent_reviewer.py`
+- `forgeai/ai/agent_ui_worker.py`
+- `forgeai/ai/prompts/roles/plan_reviewer.md`
+- `forgeai/ai/prompts/roles/project_planner.md`
+- `forgeai/ai/prompts/roles/repair_planner.md`
 - `forgeai/core/capability_execution_gate.py`
-- `tests/test_capability_execution_gate.py`
+- `forgeai/core/capability_registry.py`
+- `forgeai/core/plugin_manager.py`
+- `forgeai/plugins/python_plugin.py`
+- `forgeai/ui/capabilities_dialog.py`
+- `forgeai/ui/main_window.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/ARCHITECTURE.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/ROADMAP.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/docs/CAPABILITY_PLUGINS.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/docs/CURRENT_STATE.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/docs/PYTHON_PLUGIN.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_analyzer.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_contracts.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_orchestrator.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_planner.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_repairer.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_reviewer.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_ui_worker.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/prompts/roles/plan_reviewer.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/prompts/roles/project_planner.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/prompts/roles/repair_planner.md`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/core/capability_execution_gate.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/core/capability_registry.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/core/plugin_manager.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/plugins/python_plugin.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ui/capabilities_dialog.py`
+- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ui/main_window.py`
+- `tests/test_plugin_actions.py`
 
 #### Teststand
 
-- Pytest-Testfaelle: **481**
+- Pytest-Testfaelle: **493**
 
 #### Aktueller Plan
 
@@ -474,11 +506,11 @@ eine zeitliche Beobachtung der Workflow-Zustände führt.
 
 #### Letzte relevante Commits
 
-- `f78041f (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: integrate capability context into agent planning`
+- `893ea4d (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: add capability execution gate`
+- `f78041f feat: integrate capability context into agent planning`
 - `1c1b1b8 feat: establish ROSSA agent and capability foundation`
 - `fa174bd feat: add recovery context refresh and failure fingerprints`
 - `90b645c fix: improve request routing and reviewer handling`
-- `e259349 fix: stabilize Ollama integration and clean repository`
 
 Dieser Abschnitt wird automatisch aus dem lokalen Git- und Teststand
 sowie aus der aktuellen ROADMAP.md erzeugt.
@@ -651,3 +683,19 @@ Details: `docs/PROJECTLESS_CHAT_ACCESS.md`.
 
 Details: `docs/MODEL_POLICY.md`.
 <!-- FORGE:MODEL_POLICY:END -->
+
+## ROSSA Capability Execution Gate
+
+- Capability Planning Context bleibt eine Planungs-/Review-Informationsschicht.
+- Reale Plugin-Ausführung wird jetzt durch `CapabilityExecutionGate` geschützt.
+- Das Gate revalidiert Autorisierung, Lifecycle, Abhängigkeiten, Executor, Runtime-Fakten und Verification Profiles.
+- Beobachtete Runtime-Fakten werden in `AgentRun.fact_history` übernommen.
+- Deklarierte Verification Profiles werden vor Plugin-Ausführung für das Completion Gate verpflichtend registriert.
+- `PluginManager.execute_serial()` kann das Gate nicht umgehen.
+- Der normale Core-Dateiworkflow bleibt davon unabhängig und unverändert.
+- `AgentPlan.plugin_actions` ist als strukturierter, separater Ausführungskanal implementiert.
+- Planner und Repairer dürfen nur deklarierte Plugin-Aktionen planen; der Reviewer sieht die Aktionen explizit.
+- `manual_only` kann durch die sichtbare Planfreigabe einmalig für genau diesen AgentRun freigegeben werden; globale Plugin-Einstellungen bleiben unverändert.
+- Die Desktop-UI führt bestätigte Plugin-Aktionen über einen Hintergrund-Worker durch das Execution Gate aus.
+- Pflicht-Verification-Profile werden anschließend in einem eigenen Worker ausgeführt und in CompletionGate-Evidence überführt.
+- Python deklariert als erste reale Aktionen `inspect`, `compile` und `test`.

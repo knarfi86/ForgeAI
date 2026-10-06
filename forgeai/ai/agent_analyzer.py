@@ -71,6 +71,7 @@ class AgentAnalyzer:
             plan_text = (
                 f"Zusammenfassung: {current_plan.summary}\n"
                 f"Vorgeschlagene Änderungen: {current_plan.proposed_changes}\n"
+                f"Plugin-Aktionen: {current_plan.plugin_actions}\n"
                 f"Begründung: {current_plan.rationale}"
             )
 

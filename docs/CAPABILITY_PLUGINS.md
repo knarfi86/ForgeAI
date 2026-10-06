@@ -212,3 +212,38 @@ ROSSA Quellcode planen oder über den bestehenden WorkspaceTools-Pfad ändern da
 konkrete zukünftige `plugin_actions`. Das Gate schreibt seine Entscheidung und die
 beobachteten FactRecords in den AgentRun. Deklarierte Verification Profiles werden
 vor der Plugin-Ausführung als Completion-Anforderung registriert.
+
+## Explizite Plugin-Aktionen im AgentPlan
+
+`AgentPlan` kann jetzt neben Dateiänderungen auch konkrete `plugin_actions`
+enthalten. Eine Aktion besitzt in Version 1 exakt diese Form:
+
+```json
+{
+  "plugin_id": "python",
+  "action": "test",
+  "parameters": {}
+}
+```
+
+Der Planner darf nur Aktionen verwenden, die das jeweilige `PluginManifest`
+über `PluginActionSpec` deklariert. Freie oder erfundene Aktionsnamen werden
+vor der Ausführung deterministisch abgewiesen. Version 1 erlaubt bewusst nur
+eine Aktion pro Plugin und Plan.
+
+`manual_only` bedeutet dabei nicht mehr "nicht ausführbar", sondern "nur nach
+expliziter Benutzerfreigabe". Wenn eine solche Aktion sichtbar im AgentPlan
+steht und der Benutzer den Plan bestätigt, gilt diese Freigabe genau einmal für
+den aktuellen `AgentRun`. Die globale Plugin-Autonomie wird dadurch nicht
+verändert. `disabled`, `planned` und `unavailable` bleiben hart blockiert.
+
+Die Desktop-Kette führt Plugin-Aktionen erst nach erfolgreich angewendeten
+Dateiänderungen aus. Reine Plugin-Pläne können direkt nach der Planfreigabe
+laufen. Die Ausführung erfolgt in einem eigenen Worker, damit Tool- oder
+Testläufe die UI nicht blockieren.
+
+Nach erfolgreicher Plugin-Ausführung läuft die normale technische
+Projektverifikation. Zusätzlich werden alle vom Plugin deklarierten
+Verification Profiles in einem separaten Worker ausgeführt und als Evidence an
+den `CompletionGate` übergeben. Damit endet ein Capability-Lauf nicht mehr bei
+"weitere Evidence ausstehend", sondern kann den Abschluss vollständig belegen.

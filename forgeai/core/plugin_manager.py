@@ -70,6 +70,8 @@ class CapabilityPlanStep:
     plugin_id: str
     capability_ids: tuple[str, ...]
     reasons: tuple[str, ...]
+    action_id: str | None = None
+    parameters: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -420,6 +422,151 @@ class PluginManager:
             execution_mode="serial",
         )
 
+    def build_action_execution_plan(
+        self,
+        request_text: str,
+        plugin_actions: Iterable[Mapping[str, object]],
+        *,
+        project_path: str | Path | None = None,
+    ) -> CapabilityExecutionPlan:
+        """Build a deterministic execution plan from explicit AgentPlan actions.
+
+        Manual-only plugins remain selectable here because the later execution
+        gate can accept a one-shot user approval. Disabled/planned/unavailable
+        plugins remain blocked. Version 1 deliberately permits one action per
+        plugin so execution and approval stay unambiguous.
+        """
+
+        requests: dict[str, tuple[str, Mapping[str, object]]] = {}
+        blocked: dict[str, CapabilitySelection] = {}
+
+        for raw in plugin_actions:
+            if not isinstance(raw, Mapping):
+                raise ValueError("plugin_actions muss Objekte enthalten.")
+            plugin_id = str(raw.get("plugin_id", "")).strip()
+            action_id = str(raw.get("action", "")).strip()
+            parameters = raw.get("parameters", {})
+            if not plugin_id:
+                raise ValueError("Plugin-Aktion benötigt plugin_id.")
+            if not action_id:
+                raise ValueError("Plugin-Aktion benötigt action.")
+            if plugin_id in requests:
+                raise ValueError(
+                    f"Plugin {plugin_id!r} darf pro Plan nur eine Aktion besitzen."
+                )
+            if not isinstance(parameters, Mapping):
+                raise ValueError("Plugin-Aktionsparameter müssen ein Objekt sein.")
+
+            manifest = self.registry.get(plugin_id)
+            spec = manifest.action_spec(action_id)
+            spec.validate_parameters(parameters)
+            requests[plugin_id] = (action_id, dict(parameters))
+
+        selected_ids: set[str] = set()
+        for plugin_id, (action_id, _) in requests.items():
+            manifest = self.registry.get(plugin_id)
+            authorization = self.authorization_for(plugin_id, project_path=project_path)
+            if authorization in {
+                CapabilityAuthorization.ALLOWED,
+                CapabilityAuthorization.MANUAL_ONLY,
+            }:
+                selected_ids.add(plugin_id)
+                continue
+            blocked[plugin_id] = CapabilitySelection(
+                plugin_id=plugin_id,
+                capability_ids=manifest.action_spec(action_id).capability_ids or manifest.capabilities,
+                reasons=(f"plugin_action:{action_id}",),
+                authorization=authorization,
+            )
+
+        # Explicit action plans never hide dependency execution from the user.
+        # Every dependency must itself be a visible plugin_action.
+        for plugin_id in tuple(selected_ids):
+            manifest = self.registry.get(plugin_id)
+            for dependency in manifest.dependencies:
+                if dependency not in requests:
+                    selected_ids.discard(plugin_id)
+                    action_id, _ = requests[plugin_id]
+                    blocked[plugin_id] = CapabilitySelection(
+                        plugin_id=plugin_id,
+                        capability_ids=manifest.action_spec(action_id).capability_ids or manifest.capabilities,
+                        reasons=(
+                            f"plugin_action:{action_id}",
+                            f"dependency_action_required:{dependency}",
+                        ),
+                        authorization=CapabilityAuthorization.UNAVAILABLE,
+                    )
+                    break
+                dependency_auth = self.authorization_for(
+                    dependency, project_path=project_path
+                )
+                if dependency_auth not in {
+                    CapabilityAuthorization.ALLOWED,
+                    CapabilityAuthorization.MANUAL_ONLY,
+                }:
+                    selected_ids.discard(plugin_id)
+                    action_id, _ = requests[plugin_id]
+                    blocked[plugin_id] = CapabilitySelection(
+                        plugin_id=plugin_id,
+                        capability_ids=manifest.action_spec(action_id).capability_ids or manifest.capabilities,
+                        reasons=(
+                            f"plugin_action:{action_id}",
+                            f"dependency_blocked:{dependency}",
+                        ),
+                        authorization=CapabilityAuthorization.UNAVAILABLE,
+                    )
+                    break
+
+        changed = True
+        while changed:
+            changed = False
+            for plugin_id in tuple(selected_ids):
+                manifest = self.registry.get(plugin_id)
+                missing = [
+                    dependency
+                    for dependency in manifest.dependencies
+                    if dependency not in selected_ids
+                ]
+                if not missing:
+                    continue
+                selected_ids.discard(plugin_id)
+                action_id, _ = requests[plugin_id]
+                blocked[plugin_id] = CapabilitySelection(
+                    plugin_id=plugin_id,
+                    capability_ids=manifest.action_spec(action_id).capability_ids or manifest.capabilities,
+                    reasons=(
+                        f"plugin_action:{action_id}",
+                        f"dependency_blocked:{missing[0]}",
+                    ),
+                    authorization=CapabilityAuthorization.UNAVAILABLE,
+                )
+                changed = True
+
+        ordered_ids = self._dependency_order(selected_ids)
+        steps: list[CapabilityPlanStep] = []
+        for index, plugin_id in enumerate(ordered_ids, start=1):
+            action_id, parameters = requests[plugin_id]
+            manifest = self.registry.get(plugin_id)
+            spec = manifest.action_spec(action_id)
+            steps.append(
+                CapabilityPlanStep(
+                    order=index,
+                    plugin_id=plugin_id,
+                    capability_ids=spec.capability_ids or manifest.capabilities,
+                    reasons=(f"plugin_action:{action_id}",),
+                    action_id=action_id,
+                    parameters=dict(parameters),
+                )
+            )
+
+        return CapabilityExecutionPlan(
+            request_text=request_text,
+            project_path=str(Path(project_path)) if project_path is not None else None,
+            steps=tuple(steps),
+            blocked=tuple(blocked[key] for key in sorted(blocked)),
+            execution_mode="serial",
+        )
+
     def has_executor(self, plugin_id: str) -> bool:
         """Return whether a concrete executor is registered for the plugin."""
         self.registry.get(plugin_id)
@@ -472,7 +619,22 @@ class PluginManager:
                 raise RuntimeError(
                     f"Für Plugin {step.plugin_id!r} ist kein Executor registriert."
                 ) from exc
-            results.append(executor(context, step))
+            result = executor(context, step)
+            failed = False
+            detail = ""
+            if isinstance(result, Mapping):
+                failed = result.get("success") is False
+                detail = str(result.get("output", ""))
+            elif getattr(result, "success", None) is False:
+                failed = True
+                detail = str(getattr(result, "output", ""))
+            if failed:
+                action_text = f"/{step.action_id}" if step.action_id else ""
+                raise RuntimeError(
+                    f"Plugin-Aktion {step.plugin_id}{action_text} ist fehlgeschlagen"
+                    + (f": {detail}" if detail else ".")
+                )
+            results.append(result)
         return tuple(results)
 
     def planning_snapshot(
@@ -516,6 +678,17 @@ class PluginManager:
                     "matched": selected is not None or blocked is not None,
                     "selected_for_execution": selected is not None,
                     "capabilities": manifest.capabilities,
+                    "dependencies": manifest.dependencies,
+                    "actions": tuple(
+                        {
+                            "action_id": action.action_id,
+                            "capability_ids": action.capability_ids,
+                            "parameter_keys": action.parameter_keys,
+                            "allow_unknown_parameters": action.allow_unknown_parameters,
+                            "description": action.description,
+                        }
+                        for action in manifest.actions
+                    ),
                     "reasons": reasons,
                     "verification_profiles": manifest.verification_profiles,
                     "model_roles": manifest.model_roles,
@@ -564,6 +737,7 @@ class PluginManager:
                     "autonomous": prefs.autonomous,
                     "project_autonomous": prefs.autonomous_for(project_path),
                     "capabilities": manifest.capabilities,
+                    "actions": tuple(action.action_id for action in manifest.actions),
                     "verification_profiles": manifest.verification_profiles,
                     "model_roles": manifest.model_roles,
                     "resources": manifest.resources,
