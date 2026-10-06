@@ -1,6 +1,6 @@
 # ForgeAI Capability-Plugin-Architektur
 
-Stand: 2026-10-05
+Stand: 2026-10-06
 
 Dieses Dokument beschreibt das Zielbild für schrittweise aktivierbare
 Spezialfähigkeiten. Das allgemeine Plugin-/Capability-Grundgerüst ist
@@ -49,7 +49,8 @@ Vorgesehene Felder sind:
 - Ressourcenbedarf wie GPU, VRAM oder RAM;
 - unterstützte Dateitypen oder Projektarten;
 - Abhängigkeiten zu anderen Plugins;
-- Aktivierungsstatus.
+- Lifecycle-Status (`available`, `experimental`, `planned`, `unavailable`);
+- Aktivierungs- und Autonomiestatus.
 
 Beispielhafte Capability-Namen:
 
@@ -84,6 +85,16 @@ Forge soll vor einem Auftrag ermitteln:
 
 Fehlende Fähigkeiten werden explizit gemeldet. Forge darf sie nicht durch
 Halluzination oder stilles Weglassen ersetzen.
+
+Der Planner und Reviewer erhalten dafür einen deterministischen
+`CAPABILITY_CONTEXT`. Dieser enthält alle registrierten optionalen Plugins,
+ihren Lifecycle-Status, Benutzerautorisierung, Match-/Selection-Status und die
+deklarierten Capability-IDs. Der Kontext beschreibt optionale Plugin-/Tool-
+Fähigkeiten und schränkt die normale Core-Datei- und Codeplanung nicht ein.
+
+`runtime_availability = not_checked` ist ausdrücklich kein Laufzeitbeweis.
+Objektive Fact-Anforderungen werden weiterhin unmittelbar vor einer realen
+Plugin-Ausführung über den `FactService` geprüft.
 
 ## Script-first auch im Plugin
 
@@ -156,7 +167,8 @@ Vor der ersten Spezialfähigkeit wird das allgemeine Grundgerüst abgeschlossen:
 Implementiert sind `CapabilityRegistry`, `PluginManager`, persistierbare
 Plugin-Freigaben, projektspezifische Auto-Freigaben, deklarative
 Ressourcenanforderungen, Fact-/Verification-Anschluss, strikt serielle
-Capability-Pläne sowie die UI unter `Werkzeuge -> Plugins & Fähigkeiten`.
+Capability-Pläne, Lifecycle-Status sowie ein deterministischer Planning-Snapshot
+für Planner und Reviewer. Die UI liegt unter `Werkzeuge -> Plugins & Fähigkeiten`.
 
 Forge darf registrierte Plugins innerhalb der Benutzerfreigaben automatisch
 auswählen. Es darf Plugins jedoch niemals selbst aktivieren oder eine

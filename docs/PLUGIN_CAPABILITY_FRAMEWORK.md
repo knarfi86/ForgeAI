@@ -1,6 +1,6 @@
 # PluginManager und CapabilityRegistry
 
-Stand: 2026-10-05
+Stand: 2026-10-06
 
 ## Zweck
 
@@ -19,6 +19,11 @@ Adapter.
   persistierbare Benutzerpräferenzen.
 - `CapabilityExecutionPlan`: unveränderlicher, nachvollziehbarer Plan der
   ausgewählten und blockierten Plugins.
+- `CapabilityStatus`: deklarativer Lifecycle mit `available`, `experimental`,
+  `planned` und `unavailable`. `planned`/`unavailable` werden niemals autonom
+  in einen Ausführungsplan aufgenommen.
+- `PluginManager.planning_snapshot(...)`: deterministischer, JSON-fähiger
+  Capability-Kontext für Planner und Reviewer.
 - `execute_serial(...)`: führt Plugin-Schritte strikt nacheinander aus. Die
   erste Plugin-Architektur enthält bewusst keine Parallel-Ausführung.
 - UI `Werkzeuge -> Plugins & Fähigkeiten`: Kontrollzentrum für Aktivierung,
@@ -36,6 +41,11 @@ Forge darf eine benötigte Capability selbst erkennen, aber niemals ein
 abgeschaltetes oder nur manuell freigegebenes Plugin selbst freischalten.
 Solche Kandidaten werden im Plan als blockiert geführt.
 
+Lifecycle und Benutzerfreigabe sind getrennte Dimensionen. Ein
+`experimental`-Plugin kann mit Benutzerfreigabe ausgeführt werden; ein
+`planned`- oder `unavailable`-Plugin bleibt unabhängig von der Freigabe
+nicht ausführbar.
+
 ## Capability-Auswahl
 
 Die Basisschicht ist absichtlich konservativ. Sie nutzt:
@@ -47,6 +57,30 @@ Die Basisschicht ist absichtlich konservativ. Sie nutzt:
 Die Registry liest Projektmarker nicht selbst aus dem Dateisystem. Projektmarker
 müssen vorher durch eine maschinelle Evidence-/Fact-Quelle beobachtet worden
 sein. Damit bleibt das Script-first-Truth-Prinzip erhalten.
+
+## Capability-Kontext für Planner und Reviewer
+
+Vor dem Agentenlauf erzeugt der `PluginManager` aus dem Capability-Plan und der
+Registry einen Planning-Snapshot. Er enthält für jedes registrierte Plugin:
+
+- Lifecycle-Status;
+- aktuelle Benutzerautorisierung;
+- deklarierte Capability-IDs;
+- Match- und Selection-Status;
+- Verification-Profile und Modellrollen;
+- eine explizite Markierung, dass die Runtime-Verfügbarkeit noch nicht geprüft
+  wurde.
+
+Der `AgentRun` speichert diesen Snapshot in `metadata["capability_context"]`.
+Der `AgentOrchestrator` reicht ihn an Planner und Reviewer weiter. Beide Rollen
+müssen `planned`, `unavailable`, `disabled` und `manual_only` respektieren, wenn
+ein Plan konkret von einem optionalen Plugin abhängt. Gleichzeitig gilt die
+klare Grenze: Plugin-Autorisierung schränkt die normalen Core-Fähigkeiten für
+Reasoning, Datei- und Codeplanung nicht ein.
+
+So kann ROSSA seine optionalen Werkzeuge realistisch berücksichtigen, ohne aus
+einem blockierten Python-Plugin fälschlich abzuleiten, dass normale Python-
+Dateiänderungen unmöglich seien.
 
 ## Fact- und Verification-Anbindung
 

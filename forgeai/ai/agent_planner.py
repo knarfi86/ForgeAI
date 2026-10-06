@@ -31,6 +31,7 @@ class AgentPlanner:
         task: AgentTask,
         project_context: str = "",
         revision_context: list[dict[str, Any]] | None = None,
+        capability_context: dict[str, Any] | None = None,
     ) -> AgentPlan:
         external_context = ""
 
@@ -45,6 +46,7 @@ class AgentPlanner:
             project_context=project_context,
             external_context=external_context,
             revision_context=revision_context or [],
+            capability_context=capability_context or {},
         )
 
         response = self.model_router.generate(
@@ -106,8 +108,10 @@ class AgentPlanner:
         project_context: str,
         external_context: str,
         revision_context: list[dict[str, Any]],
+        capability_context: dict[str, Any] | None = None,
     ) -> str:
         role_prompt = load_role_prompt("project_planner")
+        capability_context = capability_context or {}
 
         sections = [
             "## Current Planning Input",
@@ -117,6 +121,32 @@ class AgentPlanner:
             "",
             f"PROJECT_CONTEXT:\n{project_context}",
         ]
+
+        if capability_context:
+            sections.extend(
+                [
+                    "",
+                    "CAPABILITY_CONTEXT:",
+                    json.dumps(
+                        capability_context,
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                    "",
+                    (
+                        "Der Capability-Kontext beschreibt optionale Plugin-/Tool-"
+                        "Fähigkeiten. Er schränkt normale Core-Dateiplanung nicht ein."
+                    ),
+                    (
+                        "Behandle planned/unavailable oder nicht autorisierte Plugins "
+                        "nicht als autonom ausführbare Werkzeuge."
+                    ),
+                    (
+                        "runtime_availability=not_checked ist kein Beweis für reale "
+                        "Laufzeitverfügbarkeit."
+                    ),
+                ]
+            )
 
         if external_context:
             sections.extend(

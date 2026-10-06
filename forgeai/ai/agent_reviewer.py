@@ -19,10 +19,12 @@ class AgentReviewer:
         self,
         plan: AgentPlan,
         project_context: str = "",
+        capability_context: dict[str, Any] | None = None,
     ) -> ReviewResult:
         prompt = self._build_prompt(
             plan=plan,
             project_context=project_context,
+            capability_context=capability_context or {},
         )
 
         response = self.model_router.generate(
@@ -63,8 +65,10 @@ class AgentReviewer:
         *,
         plan: AgentPlan,
         project_context: str,
+        capability_context: dict[str, Any] | None = None,
     ) -> str:
         role_prompt = load_role_prompt("plan_reviewer")
+        capability_context = capability_context or {}
         plan_json = json.dumps(
             {
                 "summary": plan.summary,
@@ -75,11 +79,28 @@ class AgentReviewer:
             indent=2,
         )
 
+        capability_json = (
+            json.dumps(capability_context, ensure_ascii=False, indent=2)
+            if capability_context
+            else "Kein Capability-Kontext bereitgestellt."
+        )
+
         review_input = "\n".join(
             [
                 "## Current Review Input",
                 "",
                 f"PROJECT_CONTEXT:\n{project_context}",
+                "",
+                f"CAPABILITY_CONTEXT:\n{capability_json}",
+                "",
+                (
+                    "Der Capability-Kontext beschreibt optionale Plugin-/Tool-"
+                    "Fähigkeiten und schränkt normale Core-Dateiplanung nicht ein."
+                ),
+                (
+                    "Beanstande nur eine konkrete Abhängigkeit von einem nicht "
+                    "autonom nutzbaren Plugin, nicht gewöhnliche Dateiänderungen."
+                ),
                 "",
                 f"AGENT_PLAN:\n{plan_json}",
                 "",

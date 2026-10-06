@@ -61,6 +61,7 @@ class AgentOrchestrator:
             CompletionEvidenceCategory.TECHNICAL,
         ),
         fact_service: FactService | None = None,
+        capability_context: dict[str, object] | None = None,
     ) -> None:
         self.run = run
         self.planner = planner
@@ -75,6 +76,10 @@ class AgentOrchestrator:
         self.completion_gate = completion_gate or CompletionGate()
         self.completion_required_categories = tuple(completion_required_categories)
         self.fact_service = fact_service
+        inherited_capability_context = self.run.metadata.get("capability_context", {})
+        if capability_context is None and isinstance(inherited_capability_context, dict):
+            capability_context = inherited_capability_context
+        self.capability_context = dict(capability_context or {})
         self.current_plan: AgentPlan | None = None
         self.current_review: ReviewResult | None = None
         self.current_analysis: RepairAnalysis | None = None
@@ -125,10 +130,16 @@ class AgentOrchestrator:
                 "Für diesen Agentenlauf wurde kein AgentPlanner konfiguriert."
             )
 
+        planner_kwargs = {
+            "revision_context": self.run.revision_context,
+        }
+        if self.capability_context:
+            planner_kwargs["capability_context"] = self.capability_context
+
         self.current_plan = self.planner.plan(
             task,
             project_context,
-            revision_context=self.run.revision_context,
+            **planner_kwargs,
         )
         self.current_review = None
         return self.current_plan
@@ -162,9 +173,14 @@ class AgentOrchestrator:
                 "Für das Review wurde noch kein AgentPlan erstellt."
             )
 
+        reviewer_kwargs = {}
+        if self.capability_context:
+            reviewer_kwargs["capability_context"] = self.capability_context
+
         self.current_review = self.reviewer.review(
             self.current_plan,
             project_context,
+            **reviewer_kwargs,
         )
         return self.current_review
 

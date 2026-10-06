@@ -730,6 +730,12 @@ class MainWindow(QMainWindow):
         run = AgentRun(task_id=self._agent_task.task_id)
         if self._capability_plan is not None:
             run.record_capability_plan(self._capability_plan)
+            run.metadata["capability_context"] = dict(
+                self.plugin_manager.planning_snapshot(
+                    self._capability_plan,
+                    project_path=self.workspace.active_project,
+                )
+            )
         self._agent_reality = AgentReality.from_task_and_run(
             task=self._agent_task,
             run=run,

@@ -16,6 +16,13 @@ class PluginCategory(str, Enum):
     OTHER = "other"
 
 
+class CapabilityStatus(str, Enum):
+    AVAILABLE = "available"
+    EXPERIMENTAL = "experimental"
+    PLANNED = "planned"
+    UNAVAILABLE = "unavailable"
+
+
 @dataclass(frozen=True)
 class ResourceRequirements:
     """Declarative resource needs used by the serial capability scheduler."""
@@ -54,6 +61,7 @@ class PluginManifest:
     name: str
     version: str
     category: PluginCategory = PluginCategory.OTHER
+    status: CapabilityStatus = CapabilityStatus.AVAILABLE
     capabilities: tuple[str, ...] = ()
     dependencies: tuple[str, ...] = ()
     fact_requirements: tuple[PluginFactRequirement, ...] = ()
@@ -74,6 +82,8 @@ class PluginManifest:
             raise ValueError("Plugin version darf nicht leer sein.")
         if not isinstance(self.category, PluginCategory):
             object.__setattr__(self, "category", PluginCategory(self.category))
+        if not isinstance(self.status, CapabilityStatus):
+            object.__setattr__(self, "status", CapabilityStatus(self.status))
 
         for field_name in (
             "capabilities",
@@ -191,6 +201,7 @@ class CapabilityRegistry:
                 "name": manifest.name,
                 "version": manifest.version,
                 "category": manifest.category.value,
+                "status": manifest.status.value,
                 "capabilities": manifest.capabilities,
                 "verification_profiles": manifest.verification_profiles,
                 "model_roles": manifest.model_roles,

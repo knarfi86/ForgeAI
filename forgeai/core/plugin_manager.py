@@ -5,7 +5,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, Iterable, Mapping
 
-from .capability_registry import CapabilityMatch, CapabilityRegistry, PluginManifest
+from .capability_registry import (
+    CapabilityMatch,
+    CapabilityRegistry,
+    CapabilityStatus,
+    PluginManifest,
+)
 from .fact_evidence_provider import (
     FactContext,
     FactProvider,
@@ -185,6 +190,10 @@ class PluginManager:
         *,
         project_path: str | Path | None = None,
     ) -> CapabilityAuthorization:
+        manifest = self.registry.get(plugin_id)
+        if manifest.status in {CapabilityStatus.PLANNED, CapabilityStatus.UNAVAILABLE}:
+            return CapabilityAuthorization.UNAVAILABLE
+
         prefs = self.preferences(plugin_id)
         if not prefs.enabled:
             return CapabilityAuthorization.DISABLED
@@ -448,6 +457,67 @@ class PluginManager:
             results.append(executor(context, step))
         return tuple(results)
 
+    def planning_snapshot(
+        self,
+        plan: CapabilityExecutionPlan,
+        *,
+        project_path: str | Path | None = None,
+    ) -> Mapping[str, object]:
+        """Return deterministic capability facts for planner/reviewer prompts.
+
+        This snapshot describes optional plugin/tool capabilities. It does not
+        remove or restrict the core agent's ordinary reasoning and file-planning
+        abilities. Runtime availability is intentionally not claimed here; fact
+        requirements are validated immediately before actual plugin execution.
+        """
+        selected_by_id = {step.plugin_id: step for step in plan.steps}
+        blocked_by_id = {item.plugin_id: item for item in plan.blocked}
+        entries: list[Mapping[str, object]] = []
+
+        for manifest in self.registry.list_manifests():
+            authorization = self.authorization_for(
+                manifest.plugin_id,
+                project_path=project_path,
+            )
+            selected = selected_by_id.get(manifest.plugin_id)
+            blocked = blocked_by_id.get(manifest.plugin_id)
+            reasons: tuple[str, ...] = ()
+            if selected is not None:
+                reasons = selected.reasons
+            elif blocked is not None:
+                reasons = blocked.reasons
+
+            entries.append(
+                {
+                    "plugin_id": manifest.plugin_id,
+                    "name": manifest.name,
+                    "version": manifest.version,
+                    "category": manifest.category.value,
+                    "status": manifest.status.value,
+                    "authorization": authorization.value,
+                    "matched": selected is not None or blocked is not None,
+                    "selected_for_execution": selected is not None,
+                    "capabilities": manifest.capabilities,
+                    "reasons": reasons,
+                    "verification_profiles": manifest.verification_profiles,
+                    "model_roles": manifest.model_roles,
+                    "description": manifest.description,
+                    "runtime_availability": "not_checked",
+                }
+            )
+
+        return {
+            "scope": "optional_plugin_capabilities",
+            "request_text": plan.request_text,
+            "project_path": plan.project_path,
+            "execution_mode": plan.execution_mode,
+            "core_file_planning_unaffected": True,
+            "runtime_availability_note": (
+                "not_checked means runtime facts must be validated before plugin execution"
+            ),
+            "plugins": tuple(entries),
+        }
+
     def verification_profiles_for(self, plan: CapabilityExecutionPlan) -> tuple[str, ...]:
         profiles: list[str] = []
         for step in plan.steps:
@@ -471,6 +541,7 @@ class PluginManager:
                     "name": manifest.name,
                     "version": manifest.version,
                     "category": manifest.category.value,
+                    "status": manifest.status.value,
                     "enabled": prefs.enabled,
                     "autonomous": prefs.autonomous,
                     "project_autonomous": prefs.autonomous_for(project_path),
