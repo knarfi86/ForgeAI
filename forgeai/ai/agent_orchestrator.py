@@ -27,6 +27,12 @@ from forgeai.core.completion_gate import (
     CompletionGate,
     CompletionOutcome,
 )
+from forgeai.core.plugin_manager import (
+    CapabilityExecutionContext,
+    CapabilityExecutionPlan,
+    PluginManager,
+)
+from forgeai.core.capability_execution_gate import CapabilityExecutionGateResult
 from forgeai.core.fact_evidence_provider import (
     FactContext,
     FactQuery,
@@ -382,6 +388,114 @@ class AgentOrchestrator:
             return self.fail()
 
         return self.begin_analysis()
+
+
+    def preflight_capability_execution(
+        self,
+        plugin_manager: PluginManager,
+        plan: CapabilityExecutionPlan | None = None,
+        *,
+        project_path: str | None = None,
+        metadata: dict | None = None,
+    ) -> CapabilityExecutionGateResult:
+        """Validate one optional plugin plan before any executor may run.
+
+        This gate is intentionally separate from ordinary core file execution.
+        It re-checks current authorization, runtime facts, dependencies, executor
+        presence and verification profiles, then records the evidence in AgentRun.
+        """
+        if self.run.state != AgentState.EXECUTING:
+            raise RuntimeError(
+                "Capability-Preflight ist nur im Zustand 'executing' möglich."
+            )
+        if not isinstance(plugin_manager, PluginManager):
+            raise TypeError("plugin_manager muss PluginManager sein.")
+
+        capability_plan = plan
+        if capability_plan is None:
+            if not self.run.capability_plans:
+                raise RuntimeError("Kein CapabilityExecutionPlan für diesen Lauf vorhanden.")
+            capability_plan = self.run.capability_plans[-1]
+
+        context = CapabilityExecutionContext(
+            task_id=self.run.task_id,
+            execution_round=self.run.execution_round,
+            project_path=project_path or capability_plan.project_path,
+            metadata=dict(metadata or {}),
+        )
+        result = plugin_manager.preflight_execution(capability_plan, context)
+        self.run.metadata["capability_execution_gate"] = dict(result.as_dict())
+
+        known_fact_ids = {record.fact_id for record in self.run.fact_history}
+        for record in result.fact_records:
+            if record.fact_id not in known_fact_ids:
+                self.run.record_fact(record)
+                known_fact_ids.add(record.fact_id)
+
+        if result.ready:
+            registry = plugin_manager.verification_registry
+            for profile_id in result.verification_profiles:
+                if registry is None:
+                    raise RuntimeError(
+                        "Capability Gate meldet VerificationProfile ohne Registry."
+                    )
+                self.require_verification_profile(registry.get_profile(profile_id))
+            self._record_reality_state("capability_gate_ready")
+        else:
+            self._record_reality_state("capability_gate_blocked")
+
+        return result
+
+    def execute_capability_plan(
+        self,
+        plugin_manager: PluginManager,
+        plan: CapabilityExecutionPlan | None = None,
+        *,
+        project_path: str | None = None,
+        metadata: dict | None = None,
+    ) -> tuple[object, ...]:
+        """Execute an explicit plugin/tool plan through the mandatory gate.
+
+        This is the orchestrator entry point for future concrete plugin_actions.
+        It is never invoked automatically for ordinary file-change plans.
+        """
+        capability_plan = plan
+        if capability_plan is None:
+            if not self.run.capability_plans:
+                raise RuntimeError("Kein CapabilityExecutionPlan für diesen Lauf vorhanden.")
+            capability_plan = self.run.capability_plans[-1]
+
+        gate = self.preflight_capability_execution(
+            plugin_manager,
+            capability_plan,
+            project_path=project_path,
+            metadata=metadata,
+        )
+        if not gate.ready:
+            raise RuntimeError(
+                "Capability Execution Gate blockiert die Plugin-Ausführung: "
+                + ", ".join(gate.reason_codes)
+            )
+
+        context = CapabilityExecutionContext(
+            task_id=self.run.task_id,
+            execution_round=self.run.execution_round,
+            project_path=project_path or capability_plan.project_path,
+            metadata=dict(metadata or {}),
+        )
+        results = plugin_manager.execute_serial(capability_plan, context)
+        history = self.run.metadata.setdefault("capability_execution_history", [])
+        if isinstance(history, list):
+            history.append(
+                {
+                    "execution_round": self.run.execution_round,
+                    "plugins": tuple(step.plugin_id for step in capability_plan.steps),
+                    "verification_profiles": gate.verification_profiles,
+                    "result_count": len(results),
+                }
+            )
+        self._record_reality_state("capability_execution")
+        return results
 
 
     def resolve_fact(

@@ -430,32 +430,21 @@ Die erste technische Implementierung befindet sich in
 - `docs/CAPABILITY_PLUGINS.md`
 - `docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
 - `forgeai/ai/agent_orchestrator.py`
-- `forgeai/ai/agent_planner.py`
-- `forgeai/ai/agent_reviewer.py`
-- `forgeai/ai/prompts/roles/plan_reviewer.md`
-- `forgeai/ai/prompts/roles/project_planner.md`
-- `forgeai/core/capability_registry.py`
 - `forgeai/core/plugin_manager.py`
-- `forgeai/ui/main_window.py`
-- `.rossa_install_backups/capability_planning_v1_0_20261006-133239/docs/CAPABILITY_PLUGINS.md`
-- `.rossa_install_backups/capability_planning_v1_0_20261006-133239/docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
-- `.rossa_install_backups/capability_planning_v1_0_20261006-133239/forgeai/ai/agent_orchestrator.py`
-- `.rossa_install_backups/capability_planning_v1_0_20261006-133239/forgeai/ai/agent_planner.py`
-- `.rossa_install_backups/capability_planning_v1_0_20261006-133239/forgeai/ai/agent_reviewer.py`
-- `.rossa_install_backups/capability_planning_v1_0_20261006-133239/forgeai/ai/prompts/roles/plan_reviewer.md`
-- `.rossa_install_backups/capability_planning_v1_0_20261006-133239/forgeai/ai/prompts/roles/project_planner.md`
-- `.rossa_install_backups/capability_planning_v1_0_20261006-133239/forgeai/core/capability_registry.py`
-- `.rossa_install_backups/capability_planning_v1_0_20261006-133239/forgeai/core/plugin_manager.py`
-- `.rossa_install_backups/capability_planning_v1_0_20261006-133239/forgeai/ui/main_window.py`
-- `tests/test_capability_planning_context.py`
+- `.rossa_install_backups/capability_execution_gate_v1_0_20261006-140412/docs/CAPABILITY_PLUGINS.md`
+- `.rossa_install_backups/capability_execution_gate_v1_0_20261006-140412/docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
+- `.rossa_install_backups/capability_execution_gate_v1_0_20261006-140412/forgeai/ai/agent_orchestrator.py`
+- `.rossa_install_backups/capability_execution_gate_v1_0_20261006-140412/forgeai/core/plugin_manager.py`
+- `forgeai/core/capability_execution_gate.py`
+- `tests/test_capability_execution_gate.py`
 
 #### Letzte relevante Commits
 
-- `1c1b1b8 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: establish ROSSA agent and capability foundation`
+- `f78041f (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: integrate capability context into agent planning`
+- `1c1b1b8 feat: establish ROSSA agent and capability foundation`
 - `fa174bd feat: add recovery context refresh and failure fingerprints`
 - `90b645c fix: improve request routing and reviewer handling`
 - `e259349 fix: stabilize Ollama integration and clean repository`
-- `b196d7e Add current LGDC n8n workflow`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell

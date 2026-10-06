@@ -141,3 +141,23 @@ Verfügbarkeit anhand der Fact-Evidence an.
 Damit ist die Schnittstelle für weitere Sprach-, GameDev-, Bild-, Video-, 3D-
 und Audio-Plugins praktisch bewiesen. Primary-first Routing ist umgesetzt;
 automatische Specialist-Auswahl und Modellbenchmarks bleiben separat.
+
+
+## Execution boundary
+
+`CapabilityExecutionGate` bildet die harte Grenze zwischen Capability-Auswahl und
+tatsächlicher Plugin-Ausführung. Ein registriertes oder im Planning Context genanntes
+Plugin ist noch kein Beweis, dass es zur Laufzeit ausgeführt werden kann.
+
+Vor `PluginManager.execute_serial()` werden deshalb erneut geprüft:
+
+- aktuelle Autorisierung und Capability-Lifecycle,
+- deklarierte Abhängigkeiten und serielle Reihenfolge,
+- vorhandener konkreter Executor,
+- FactService-basierte Runtime-Anforderungen,
+- Existenz aller deklarierten Verification Profiles.
+
+`PluginManager.execute_serial()` führt das Gate selbst aus, sodass direkte Aufrufer
+die Prüfung nicht versehentlich umgehen. Der Orchestrator kann den Preflight zusätzlich
+vorab auswerten, Evidence in `AgentRun.fact_history` übernehmen und Verification
+Profiles für das Completion Gate verpflichtend machen.

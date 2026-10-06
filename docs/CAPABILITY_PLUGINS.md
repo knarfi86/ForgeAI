@@ -194,3 +194,21 @@ explizit anfordert. Das Plugin plant oder schreibt keinen Code selbst; diese
 Verantwortung bleibt beim Forge-Core und seinen Agenten.
 
 Details: `docs/PYTHON_PLUGIN.md`.
+
+
+## Capability Execution Gate
+
+Reale Plugin-/Tool-Ausführung läuft über eine zusätzliche deterministische Schranke.
+Der Planning Context ist dabei nur Vorwissen; unmittelbar vor einem Executor werden
+Lifecycle/Autorisierung, Abhängigkeiten, registrierter Executor, Runtime-Fakten und
+deklarierte Verification Profiles erneut geprüft.
+
+Wichtig: Diese Schranke gilt ausschließlich für optionale Plugin-/Tool-Ausführung.
+Normale ROSSA-Core-Planung und Dateiänderungen werden dadurch nicht blockiert.
+`manual_only` oder ein fehlendes Plugin ist daher keine globale Aussage darüber, ob
+ROSSA Quellcode planen oder über den bestehenden WorkspaceTools-Pfad ändern darf.
+
+`AgentOrchestrator.execute_capability_plan()` ist der vorgesehene Einstiegspunkt für
+konkrete zukünftige `plugin_actions`. Das Gate schreibt seine Entscheidung und die
+beobachteten FactRecords in den AgentRun. Deklarierte Verification Profiles werden
+vor der Plugin-Ausführung als Completion-Anforderung registriert.

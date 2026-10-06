@@ -15,6 +15,7 @@ from .fact_evidence_provider import (
     FactContext,
     FactProvider,
     FactQuery,
+    FactRecord,
     FactService,
     FactStatus,
 )
@@ -52,6 +53,7 @@ class PluginAvailability:
     reason_codes: tuple[str, ...] = ()
     fact_ids: tuple[str, ...] = ()
     details: tuple[str, ...] = ()
+    fact_records: tuple[FactRecord, ...] = field(default=(), repr=False)
 
 
 @dataclass(frozen=True)
@@ -210,6 +212,7 @@ class PluginManager:
         reason_codes: list[str] = []
         fact_ids: list[str] = []
         details: list[str] = []
+        fact_records: list[FactRecord] = []
 
         for dependency in manifest.dependencies:
             if dependency not in {item.plugin_id for item in self.registry.list_manifests()}:
@@ -239,6 +242,7 @@ class PluginManager:
                     )
                     record = resolution.record
                     fact_ids.append(record.fact_id)
+                    fact_records.append(record)
                     if record.summary:
                         details.append(record.summary)
                     if record.status != FactStatus.OBSERVED:
@@ -258,6 +262,7 @@ class PluginManager:
             reason_codes=tuple(reason_codes),
             fact_ids=tuple(fact_ids),
             details=tuple(dict.fromkeys(details)),
+            fact_records=tuple(fact_records),
         )
 
     def select_for_request(
@@ -415,6 +420,21 @@ class PluginManager:
             execution_mode="serial",
         )
 
+    def has_executor(self, plugin_id: str) -> bool:
+        """Return whether a concrete executor is registered for the plugin."""
+        self.registry.get(plugin_id)
+        return plugin_id in self._executors
+
+    def preflight_execution(
+        self,
+        plan: CapabilityExecutionPlan,
+        context: CapabilityExecutionContext,
+    ):
+        """Run the mandatory deterministic gate for a real plugin execution."""
+        from .capability_execution_gate import CapabilityExecutionGate
+
+        return CapabilityExecutionGate(self).evaluate(plan, context)
+
     def validate_plan(
         self,
         plan: CapabilityExecutionPlan,
@@ -430,24 +450,22 @@ class PluginManager:
         plan: CapabilityExecutionPlan,
         context: CapabilityExecutionContext,
     ) -> tuple[object, ...]:
-        """Execute each selected plugin strictly one after another.
+        """Execute plugin steps serially after the mandatory execution gate.
 
-        There is deliberately no parallel execution API in the first plugin
-        architecture. Resource-aware concurrency, if ever introduced, must be a
-        separate reviewed feature.
+        Callers cannot bypass authorization/runtime/verification preflight by
+        invoking this method directly. Core file changes do not use this API.
         """
+        gate = self.preflight_execution(plan, context)
+        if not gate.ready:
+            raise RuntimeError(
+                "Capability Execution Gate blockiert die Plugin-Ausführung: "
+                + ", ".join(gate.reason_codes)
+            )
 
         results: list[object] = []
-        availability = {
-            item.plugin_id: item for item in self.validate_plan(plan, context)
-        }
         for step in plan.steps:
-            state = availability[step.plugin_id]
-            if not state.available:
-                raise RuntimeError(
-                    f"Plugin {step.plugin_id!r} ist nicht verfügbar: "
-                    + ", ".join(state.reason_codes)
-                )
+            # The gate has already proved that every executor exists. Keep the
+            # lookup defensive in case the registry is mutated concurrently.
             try:
                 executor = self._executors[step.plugin_id]
             except KeyError as exc:
