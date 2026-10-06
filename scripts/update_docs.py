@@ -221,8 +221,9 @@ def get_changed_files() -> list[str]:
 
         if len(line) >= 4:
             path = line[3:].rstrip()
-            if path not in ignored:
-                files.append(path)
+            if path in ignored or path.startswith(".rossa_install_backups/"):
+                continue
+            files.append(path)
 
     return files
 

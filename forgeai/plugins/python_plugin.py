@@ -125,7 +125,12 @@ class PythonPlugin:
             PluginActionSpec(
                 action_id="compile",
                 capability_ids=("code.python.test",),
-                description="Python-Quellen des Projekts syntaktisch kompilieren.",
+                parameter_keys=("path",),
+                description=(
+                    "Python-Quellen syntaktisch kompilieren. Optional begrenzt "
+                    "der Parameter path die Prüfung auf eine Datei oder einen "
+                    "Unterordner innerhalb des aktuellen Projekts."
+                ),
             ),
             PluginActionSpec(
                 action_id="test",
@@ -388,7 +393,22 @@ class PythonPlugin:
                     mode=CompletionEvidenceMode.FACT,
                 )
 
-            result = self._compile_project(runtime, project_root)
+            target_value = self._compile_target_from_metadata(context.metadata)
+            target, target_error = self._resolve_compile_target(project_root, target_value)
+            if target_error is not None:
+                return VerificationResult(
+                    check_id=check.check_id,
+                    provider_id=VERIFICATION_PROVIDER_ID,
+                    category=CompletionEvidenceCategory.TECHNICAL,
+                    status=VerificationStatus.FAIL,
+                    summary="Python-Syntaxprüfung ist fehlgeschlagen.",
+                    source=VERIFICATION_PROVIDER_ID,
+                    mode=CompletionEvidenceMode.FACT,
+                    observed_value=target_error,
+                    details={"target": str(target_value or "")},
+                )
+
+            result = self._compile_project(runtime, project_root, target)
             status = VerificationStatus.PASS if result.success else VerificationStatus.FAIL
             return VerificationResult(
                 check_id=check.check_id,
@@ -462,7 +482,17 @@ class PythonPlugin:
             )
 
         if action == "compile":
-            return self._compile_project(runtime, project_root)
+            target_value = step.parameters.get("path")
+            target, target_error = self._resolve_compile_target(project_root, target_value)
+            if target_error is not None:
+                return PythonExecutionResult(
+                    action=action,
+                    success=False,
+                    exit_code=2,
+                    output=target_error,
+                    executable=str(runtime.executable),
+                )
+            return self._compile_project(runtime, project_root, target)
         if action == "test":
             return self._test_project(runtime, project_root)
 
@@ -545,14 +575,24 @@ class PythonPlugin:
         absent = "No module named pytest" in output or "No module named 'pytest'" in output
         return False, None, completed.returncode, absent
 
-    def _compile_project(self, runtime: PythonRuntime, project_root: Path) -> PythonExecutionResult:
-        python_files = tuple(self._iter_python_files(project_root))
+    def _compile_project(
+        self,
+        runtime: PythonRuntime,
+        project_root: Path,
+        target: Path | None = None,
+    ) -> PythonExecutionResult:
+        target = target or project_root.resolve()
+        python_files = tuple(self._iter_python_files(project_root, target))
+        scope_label = self._scope_label(project_root, target)
         if not python_files:
             return PythonExecutionResult(
                 action="compile",
                 success=True,
                 exit_code=0,
-                output="Keine Python-Dateien für die Syntaxprüfung gefunden.",
+                output=(
+                    "Keine Python-Dateien für die Syntaxprüfung gefunden. "
+                    f"Bereich: {scope_label}"
+                ),
                 executable=str(runtime.executable),
                 command=(),
             )
@@ -587,9 +627,9 @@ class PythonPlugin:
 
         success = not failures
         output = (
-            f"{checked} Python-Datei(en) geprüft."
+            f"{checked} Python-Datei(en) geprüft. Bereich: {scope_label}"
             if success
-            else "\n\n".join(failures)
+            else "\n\n".join(failures) + f"\n\nBereich: {scope_label}"
         )
         return PythonExecutionResult(
             action="compile",
@@ -597,7 +637,7 @@ class PythonPlugin:
             exit_code=0 if success else 1,
             output=output,
             executable=str(runtime.executable),
-            command=(str(runtime.executable), "-m", "py_compile", "<project python files>"),
+            command=(str(runtime.executable), "-m", "py_compile", scope_label),
         )
 
     def _test_project(self, runtime: PythonRuntime, project_root: Path) -> PythonExecutionResult:
@@ -680,10 +720,67 @@ class PythonPlugin:
         return tuple(marker for marker in _PROJECT_MARKERS if (project_root / marker).is_file())
 
     @staticmethod
-    def _iter_python_files(project_root: Path):
-        for path in sorted(project_root.rglob("*.py")):
+    def _resolve_compile_target(
+        project_root: Path,
+        raw_target: object,
+    ) -> tuple[Path | None, str | None]:
+        root = project_root.resolve()
+        if raw_target is None or not str(raw_target).strip():
+            return root, None
+
+        raw_text = str(raw_target).strip().strip('"').strip("'")
+        candidate = Path(raw_text)
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        try:
+            resolved = candidate.resolve()
+            resolved.relative_to(root)
+        except (OSError, ValueError):
+            return None, (
+                "Python-Compile-Ziel liegt außerhalb des aktuellen Projekts: "
+                f"{raw_text}"
+            )
+        if not resolved.exists():
+            return None, f"Python-Compile-Ziel existiert nicht: {raw_text}"
+        if not resolved.is_dir() and not resolved.is_file():
+            return None, f"Python-Compile-Ziel ist weder Datei noch Ordner: {raw_text}"
+        return resolved, None
+
+    @staticmethod
+    def _compile_target_from_metadata(metadata: Mapping[str, object]) -> object | None:
+        actions = metadata.get("plugin_actions")
+        if not isinstance(actions, Mapping):
+            return None
+        python_action = actions.get(PLUGIN_ID)
+        if not isinstance(python_action, Mapping):
+            return None
+        if str(python_action.get("action", "")).strip().casefold() != "compile":
+            return None
+        parameters = python_action.get("parameters", {})
+        if not isinstance(parameters, Mapping):
+            return None
+        return parameters.get("path")
+
+    @staticmethod
+    def _scope_label(project_root: Path, target: Path) -> str:
+        root = project_root.resolve()
+        resolved = target.resolve()
+        try:
+            relative = resolved.relative_to(root)
+        except ValueError:
+            return str(resolved)
+        return "." if not relative.parts else relative.as_posix()
+
+    @staticmethod
+    def _iter_python_files(project_root: Path, target: Path | None = None):
+        root = project_root.resolve()
+        selected = (target or root).resolve()
+        candidates = (selected,) if selected.is_file() else selected.rglob("*.py")
+        for path in sorted(candidates):
+            if path.suffix.casefold() != ".py":
+                continue
             try:
-                relative_parts = path.relative_to(project_root).parts[:-1]
+                relative_parts = path.resolve().relative_to(root).parts[:-1]
             except ValueError:
                 continue
             if any(part in _EXCLUDED_DIRS for part in relative_parts):

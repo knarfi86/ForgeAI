@@ -5,7 +5,7 @@ from typing import Any
 
 from .agent_contracts import AgentPlan, ReviewDecision, ReviewResult
 from .model_router import ModelRouter
-from .prompt_core import compose_system_prompt
+from .prompt_core import compose_routed_prompt
 from .prompt_roles import load_role_prompt
 
 
@@ -131,7 +131,14 @@ class AgentReviewer:
             ]
         )
 
-        return compose_system_prompt(role_prompt, review_input)
+        user_input, separator, contract = review_input.partition("\n## Review Contract\n")
+        if not separator:
+            raise RuntimeError("Review Contract fehlt im Reviewer-Prompt.")
+        return compose_routed_prompt(
+            role_prompt,
+            "## Review Contract\n" + contract,
+            user_content=user_input,
+        )
 
     @staticmethod
     def _parse_response(response: str) -> ReviewResult:

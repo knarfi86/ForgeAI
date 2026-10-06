@@ -203,6 +203,7 @@ class AgentProfileVerificationWorker(QThread):
         task_id: str,
         execution_round: int,
         project_path: str | Path | None,
+        metadata: dict | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -211,6 +212,7 @@ class AgentProfileVerificationWorker(QThread):
         self.task_id = task_id
         self.execution_round = execution_round
         self.project_path = str(project_path) if project_path is not None else None
+        self.metadata = dict(metadata or {})
 
     def run(self) -> None:
         try:
@@ -219,6 +221,7 @@ class AgentProfileVerificationWorker(QThread):
                 task_id=self.task_id,
                 execution_round=self.execution_round,
                 project_path=self.project_path,
+                metadata=self.metadata,
             )
             reports = tuple(
                 engine.run(profile_id, context)

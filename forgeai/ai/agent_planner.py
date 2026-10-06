@@ -7,7 +7,7 @@ from .agent_contracts import AgentPlan, AgentTask
 from .external_planner import ExternalPlanner
 from .model_router import ModelRouter
 from .prompt_roles import load_role_prompt
-from .prompt_core import compose_system_prompt
+from .prompt_core import compose_routed_prompt
 
 
 class AgentPlanner:
@@ -229,7 +229,15 @@ class AgentPlanner:
             ]
         )
 
-        return compose_system_prompt(role_prompt, "\n".join(sections))
+        planning_input = "\n".join(sections)
+        user_input, separator, contract = planning_input.partition("\n## Planning Contract\n")
+        if not separator:
+            raise RuntimeError("Planning Contract fehlt im Planner-Prompt.")
+        return compose_routed_prompt(
+            role_prompt,
+            "## Planning Contract\n" + contract,
+            user_content=user_input,
+        )
 
     @staticmethod
     def _parse_response(response: str) -> AgentPlan:

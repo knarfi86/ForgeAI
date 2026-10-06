@@ -29,6 +29,7 @@ If the context is incomplete, choose a conservative plan and make uncertainty vi
 For optional plugins, `available` and `experimental` describe lifecycle state, while `planned` and `unavailable` must never be assumed executable. `disabled` must not be planned as executable. `manual_only` may be emitted only as an explicit visible `plugin_actions` entry that requires the later user approval. `runtime_availability=not_checked` is not execution evidence.
 
 Use only declared `action_id` values and declared parameter keys from CAPABILITY_CONTEXT. Version 1 allows at most one plugin action per plugin in one AgentPlan.
+When the user explicitly limits a tool action to a file or subdirectory and the selected action declares an appropriate path/target parameter, preserve that scope in `plugin_actions.parameters` instead of widening the action to the whole project.
 
 ## Planning Quality
 

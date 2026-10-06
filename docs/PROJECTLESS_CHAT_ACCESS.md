@@ -47,17 +47,22 @@ wurden. Er verleiht außerdem keinerlei Schreibrecht.
 
 ## Persistenz und UI
 
-Externe Datei-/Ordnerfreigaben werden in `ai_external_access_grants` persistent
-gespeichert. Der globale Lesemodus wird als Setting gespeichert.
+Projektinterne Datei-/Ordnerfreigaben werden in `ai_access_grants`, externe
+Freigaben in `ai_external_access_grants` persistent gespeichert. Der globale
+Lesemodus wird als Setting gespeichert.
 
 Verwaltung in der UI:
 
 `Werkzeuge -> KI-Lesefreigaben`
 
 Dort können Datei- und Ordnerfreigaben hinzugefügt oder entfernt sowie der
-globale Lesezugriff explizit ein- oder ausgeschaltet werden.
+globale Lesezugriff explizit ein- oder ausgeschaltet werden. Liegt der gewählte
+Pfad im aktiven Projekt, verwendet der Dialog automatisch die Projektfreigabe;
+außerhalb des Projekts die externe Read-Authority. Der Projektbaum und der Dialog
+arbeiten damit auf derselben Projekt-Freigabequelle.
 
-Projektinterne Freigaben über den Projektbaum bleiben davon getrennt.
+Eine Lesefreigabe verändert den Projektmodus nicht und erteilt insbesondere kein
+Schreibrecht.
 
 ## Kontextgrenzen
 

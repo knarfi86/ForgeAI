@@ -331,16 +331,22 @@ class OllamaClient:
         model: str | None = None,
         base_url: str | None = None,
         response_format: dict | str | None = None,
-            num_ctx: int | None = None,
+        num_ctx: int | None = None,
+        system_prompt: str | None = None,
     ) -> str:
         if not model:
             raise ValueError("Kein Ollama-Modell angegeben.")
 
         target_url = base_url if base_url is not None else Config.LOCAL_OLLAMA_URL
 
+        messages: list[dict[str, str]] = []
+        if system_prompt is not None and str(system_prompt).strip():
+            messages.append({"role": "system", "content": str(system_prompt).strip()})
+        messages.append({"role": "user", "content": prompt})
+
         payload = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
             "stream": False,
         }
 

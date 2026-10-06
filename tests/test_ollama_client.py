@@ -1,4 +1,4 @@
-﻿import json
+import json
 import logging
 import urllib.error
 from unittest.mock import Mock
@@ -239,6 +239,32 @@ def test_generate_requires_model():
 
     with pytest.raises(ValueError, match="Kein Ollama-Modell"):
         client.generate("hello")
+
+
+def test_generate_sends_distinct_system_and_user_chat_roles(monkeypatch):
+    response = Mock()
+    response.__enter__ = Mock(return_value=response)
+    response.__exit__ = Mock(return_value=False)
+    response.read = Mock(
+        return_value=json.dumps({"message": {"content": "ok"}}).encode("utf-8")
+    )
+    urlopen = Mock(return_value=response)
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+
+    client = OllamaClient()
+    result = client.generate(
+        "USER_CONTEXT_DATA",
+        model="model-a",
+        system_prompt="SYSTEM_RULES",
+    )
+
+    assert result == "ok"
+    request = urlopen.call_args.args[0]
+    payload = json.loads(request.data.decode("utf-8"))
+    assert payload["messages"] == [
+        {"role": "system", "content": "SYSTEM_RULES"},
+        {"role": "user", "content": "USER_CONTEXT_DATA"},
+    ]
 
 
 def test_connect_logs_success(monkeypatch, caplog):

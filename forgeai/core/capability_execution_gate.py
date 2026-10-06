@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Mapping
@@ -118,6 +119,34 @@ class CapabilityExecutionGate:
             except TypeError:
                 approved_plugin_ids = set()
 
+        approved_action_keys: set[tuple[str, str, str]] = set()
+        approved_actions_raw = context.metadata.get("approved_plugin_actions", ())
+        try:
+            approved_actions_iter = tuple(approved_actions_raw)
+        except TypeError:
+            approved_actions_iter = ()
+        for approved_action in approved_actions_iter:
+            if not isinstance(approved_action, Mapping):
+                continue
+            plugin_id = str(approved_action.get("plugin_id", "")).strip()
+            action_id = str(approved_action.get("action", "")).strip()
+            parameters = approved_action.get("parameters", {})
+            if not isinstance(parameters, Mapping):
+                continue
+            approved_action_keys.add(
+                (
+                    plugin_id,
+                    action_id,
+                    json.dumps(
+                        dict(parameters),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        default=str,
+                    ),
+                )
+            )
+
         for step in plan.steps:
             manifest = self.manager.registry.get(step.plugin_id)
             authorization = self.manager.authorization_for(
@@ -125,9 +154,24 @@ class CapabilityExecutionGate:
                 project_path=context.project_path,
             )
             reasons: list[str] = []
+            step_action_key = (
+                step.plugin_id,
+                str(step.action_id or ""),
+                json.dumps(
+                    dict(step.parameters),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                ),
+            )
             manual_approval_used = (
                 authorization == CapabilityAuthorization.MANUAL_ONLY
-                and step.plugin_id in approved_plugin_ids
+                and (
+                    step_action_key in approved_action_keys
+                    if step.action_id is not None
+                    else step.plugin_id in approved_plugin_ids
+                )
             )
             authorization_ready = (
                 authorization == CapabilityAuthorization.ALLOWED

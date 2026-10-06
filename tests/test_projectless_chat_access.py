@@ -179,3 +179,77 @@ def test_main_window_exposes_access_ui_and_new_project_action_without_importing_
     assert '"Neues Projekt"' in source
     assert '"KI-Lesefreigaben"' in source
     assert "def show_access_grants" in source
+
+
+def test_unquoted_windows_file_path_with_spaces_is_not_truncated():
+    assert extract_local_paths(
+        r"Analysiere G:\Two Fronts UE5\Source\main.cpp"
+    ) == [r"G:\Two Fronts UE5\Source\main.cpp"]
+
+
+def test_unquoted_windows_directory_path_with_spaces_is_not_truncated():
+    assert extract_local_paths(
+        r"Analysiere G:\Two Fronts UE5"
+    ) == [r"G:\Two Fronts UE5"]
+
+
+def test_project_read_grant_uses_project_scope_and_reaches_context(tmp_path: Path):
+    manager = make_manager(tmp_path)
+    project = tmp_path / "project"
+    project.mkdir()
+    target = project / "main.py"
+    target.write_text("print('project grant')", encoding="utf-8")
+    manager.open_project(project)
+
+    manager.grant_read_access(target)
+
+    assert len(manager.ai_grants()) == 1
+    assert manager.external_ai_grants() == []
+    assert target.resolve() in manager.ai_accessible_files()
+
+
+def test_read_grant_does_not_enable_project_writes(tmp_path: Path):
+    from forgeai.core.models import ProjectMode
+
+    manager = make_manager(tmp_path)
+    project = tmp_path / "project"
+    project.mkdir()
+    target = project / "main.py"
+    target.write_text("print('read only')", encoding="utf-8")
+    manager.open_project(project)
+
+    manager.grant_read_access(target)
+
+    assert manager.project_mode() == ProjectMode.READ_ONLY
+
+
+def test_main_window_read_grants_do_not_escalate_project_mode():
+    import ast
+
+    source = Path(__file__).resolve().parents[1] / "forgeai/ui/main_window.py"
+    module = ast.parse(source.read_text(encoding="utf-8"))
+    main_window = next(
+        node for node in module.body
+        if isinstance(node, ast.ClassDef) and node.name == "MainWindow"
+    )
+    for method_name in ("open_project", "grant_ai_access", "grant_ai_access_many"):
+        method = next(
+            node for node in main_window.body
+            if isinstance(node, ast.FunctionDef) and node.name == method_name
+        )
+        calls = {
+            node.func.attr
+            for node in ast.walk(method)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        assert "set_project_mode" not in calls
+
+
+def test_access_dialog_uses_scope_aware_read_grants_without_importing_qt():
+    source = (
+        Path(__file__).resolve().parents[1] / "forgeai/ui/access_grants_dialog.py"
+    ).read_text(encoding="utf-8")
+
+    assert "self.workspace.read_grants()" in source
+    assert "self.workspace.grant_read_access(path)" in source
+    assert "self.workspace.revoke_read_access" in source

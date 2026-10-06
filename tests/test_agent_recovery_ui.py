@@ -162,16 +162,16 @@ def test_verification_worker_error_starts_recovery():
 
 
 
-def test_noop_agent_plan_completes_without_approval_or_coder(monkeypatch):
+def test_noop_agent_plan_verifies_without_user_approval_or_coder(monkeypatch):
     class _FakeOrchestrator:
         def __init__(self):
-            self.completed = False
-            self.run = SimpleNamespace(state=AgentState.PLANNING)
+            self.approve_calls = 0
+            self.run = SimpleNamespace(state=AgentState.APPROVAL_REQUIRED)
 
-        def complete_without_changes(self):
-            self.completed = True
-            self.run.state = AgentState.COMPLETED
-            return AgentState.COMPLETED
+        def approve(self):
+            self.approve_calls += 1
+            self.run.state = AgentState.EXECUTING
+            return AgentState.EXECUTING
 
     orchestrator = _FakeOrchestrator()
     window = _make_window(orchestrator)
@@ -181,6 +181,8 @@ def test_noop_agent_plan_completes_without_approval_or_coder(monkeypatch):
 
     coder_calls = []
     window._start_agent_coder_stream = lambda: coder_calls.append(True)
+    verification_calls = []
+    window._start_agent_verification = lambda: verification_calls.append(True)
 
     approval_calls = []
     monkeypatch.setattr(
@@ -191,8 +193,9 @@ def test_noop_agent_plan_completes_without_approval_or_coder(monkeypatch):
 
     plan = SimpleNamespace(
         proposed_changes=[],
-        summary="Keine ?nderung erforderlich",
-        rationale="Die gew?nschte Pr?fung ist bereits vorhanden.",
+        plugin_actions=[],
+        summary="Keine Änderung erforderlich",
+        rationale="Die gewünschte Prüfung ist bereits vorhanden.",
     )
 
     window._request_agent_plan_approval(
@@ -201,12 +204,13 @@ def test_noop_agent_plan_completes_without_approval_or_coder(monkeypatch):
         dialog_intro="Test",
     )
 
-    assert orchestrator.completed is True
-    assert orchestrator.run.state == AgentState.COMPLETED
+    assert orchestrator.approve_calls == 1
+    assert orchestrator.run.state == AgentState.EXECUTING
+    assert verification_calls == [True]
     assert coder_calls == []
     assert approval_calls == []
-    assert window.statuses[-1] == "Keine " + chr(0xE4) + "nderungen erforderlich"
-    assert window.input_bar.busy_values[-1] is False
+    assert window.statuses[-1] == "Keine Änderungen, verifiziere Projektzustand"
+    assert window.input_bar.busy_values[-1] is True
 
 
 def test_recovery_refreshes_reality_before_worker_start(monkeypatch):

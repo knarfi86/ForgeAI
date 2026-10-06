@@ -1,4 +1,4 @@
-"""UI for persistent local read permissions outside the active project."""
+"""UI for persistent local read permissions across project and external scopes."""
 
 from __future__ import annotations
 
@@ -68,10 +68,14 @@ class AccessGrantsDialog(QDialog):
         self.global_read.setChecked(self.workspace.global_read_access_enabled())
         self.global_read.blockSignals(False)
         self.list.clear()
-        for row in self.workspace.external_ai_grants():
+        for row in self.workspace.read_grants():
             kind = "Ordner" if row["grant_type"] == "directory" else "Datei"
-            item = QListWidgetItem(f"{kind}: {row['absolute_path']}")
-            item.setData(Qt.ItemDataRole.UserRole, row["absolute_path"])
+            scope = "Projekt" if row["scope"] == "project" else "Extern"
+            item = QListWidgetItem(f"{scope} · {kind}: {row['path']}")
+            item.setData(
+                Qt.ItemDataRole.UserRole,
+                (row["scope"], row["path"]),
+            )
             self.list.addItem(item)
 
     def _toggle_global(self, enabled: bool) -> None:
@@ -95,21 +99,22 @@ class AccessGrantsDialog(QDialog):
     def _grant_file(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(self, "Datei(en) für Forge freigeben")
         for path in paths:
-            self.workspace.grant_external_ai_access(path)
+            self.workspace.grant_read_access(path)
         if paths:
             self.refresh()
 
     def _grant_folder(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Ordner für Forge freigeben")
         if path:
-            self.workspace.grant_external_ai_access(path)
+            self.workspace.grant_read_access(path)
             self.refresh()
 
     def _revoke_selected(self) -> None:
         item = self.list.currentItem()
         if item is None:
             return
-        path = item.data(Qt.ItemDataRole.UserRole)
-        if path:
-            self.workspace.revoke_external_ai_access(Path(path))
+        grant = item.data(Qt.ItemDataRole.UserRole)
+        if grant:
+            scope, path = grant
+            self.workspace.revoke_read_access(Path(path), scope=scope)
             self.refresh()

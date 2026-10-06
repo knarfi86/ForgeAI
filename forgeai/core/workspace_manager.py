@@ -22,15 +22,15 @@ class WorkspaceManager:
         self.logger = logging.getLogger("forgeai.workspace")
         self.brain = ForgeBrain(database)
         self.analyzer = ProjectAnalyzer(database, indexer.filesystem)
-        self._session_grants: set[Path] = set()  # Temporary grants for this session
+        self._session_grants: dict[Path, str] = {}  # path -> file/directory, session-only
 
     def open_project(self, path: str | Path) -> ProjectStatistics:
         project = self.filesystem.resolve(path)
         if not self.filesystem.is_directory(project):
             raise ValueError(f"Ungültiger Projektordner: {project}")
         self.database.upsert_project(str(project), project.name)
+        self._session_grants.clear()
         self.active_project = project
-        self._inherit_parent_ai_grants(project)
         statistics = self.indexer.index(project)
         analysis = self.analyzer.analyze(project)
         self.brain.save_analysis(analysis)
@@ -111,19 +111,128 @@ class WorkspaceManager:
         target = self.filesystem.resolve(path)
         if target != self.active_project and self.active_project not in target.parents:
             raise ValueError("KI-Freigaben sind auf das aktive Projekt beschränkt.")
+        relative = target.relative_to(self.active_project).as_posix()
+        row = self.database.fetchone(
+            "SELECT grant_type FROM ai_access_grants WHERE project_path=? AND relative_path=?",
+            (str(self.active_project), relative),
+        )
         self.database.execute(
             "DELETE FROM ai_access_grants WHERE project_path=? AND relative_path=?",
-            (str(self.active_project), target.relative_to(self.active_project).as_posix()),
+            (str(self.active_project), relative),
         )
+        if row:
+            self._purge_legacy_inherited_copies(
+                self.active_project,
+                target,
+                row["grant_type"],
+            )
         self.logger.info("Revoked AI read access to %s", target)
 
+    def _purge_legacy_inherited_copies(
+        self,
+        source_root: Path,
+        source_target: Path,
+        grant_type: str,
+    ) -> None:
+        """Remove child rows created by the pre-dynamic inheritance implementation.
+
+        Older ForgeAI builds copied inherited grants into nested project rows and
+        lost their provenance. When the source grant is revoked we prefer the safe
+        outcome: matching descendant copies are removed as well.
+        """
+        project_rows = self.database.fetchall(
+            "SELECT DISTINCT project_path FROM ai_access_grants WHERE project_path != ?",
+            (str(source_root),),
+        )
+        for project_row in project_rows:
+            child_root = self.filesystem.resolve(project_row["project_path"])
+            if child_root == source_root or source_root not in child_root.parents:
+                continue
+
+            if grant_type == "file":
+                if child_root not in source_target.parents:
+                    continue
+                child_relative = source_target.relative_to(child_root).as_posix()
+            elif source_target == child_root or source_target in child_root.parents:
+                child_relative = "."
+            elif child_root in source_target.parents:
+                child_relative = source_target.relative_to(child_root).as_posix()
+            else:
+                continue
+
+            self.database.execute(
+                "DELETE FROM ai_access_grants "
+                "WHERE project_path=? AND relative_path=? AND grant_type=?",
+                (str(child_root), child_relative, grant_type),
+            )
+
     def ai_grants(self):
+        """Return grants explicitly stored for the active project.
+
+        Inherited parent grants are deliberately not copied into the child project.
+        Use ``effective_ai_grants`` when evaluating access.
+        """
         if not self.active_project:
             return []
         return self.database.fetchall(
             "SELECT relative_path, grant_type, created_at FROM ai_access_grants WHERE project_path=? ORDER BY created_at",
             (str(self.active_project),),
         )
+
+    def effective_ai_grants(self) -> list[dict[str, str]]:
+        """Return direct plus dynamically inherited project read grants.
+
+        A parent-project grant may cover a nested project, but it is never persisted
+        as a new child grant. Revoking the parent therefore removes the inherited
+        permission immediately.
+        """
+        if not self.active_project:
+            return []
+
+        root = self.active_project
+        rows = self.database.fetchall(
+            "SELECT project_path, relative_path, grant_type, created_at "
+            "FROM ai_access_grants ORDER BY created_at, project_path, relative_path"
+        )
+        result: list[dict[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+
+        for row in rows:
+            source_root = self.filesystem.resolve(row["project_path"])
+            source_target = self.filesystem.resolve(source_root / row["relative_path"])
+            grant_type = row["grant_type"]
+
+            if source_root == root:
+                relative = row["relative_path"]
+                origin = "direct"
+            elif grant_type == "file" and root in source_target.parents:
+                relative = source_target.relative_to(root).as_posix()
+                origin = "inherited"
+            elif grant_type == "directory" and (
+                source_target == root or source_target in root.parents
+            ):
+                relative = "."
+                origin = "inherited"
+            elif grant_type == "directory" and root in source_target.parents:
+                relative = source_target.relative_to(root).as_posix()
+                origin = "inherited"
+            else:
+                continue
+
+            key = (relative, grant_type)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(
+                {
+                    "relative_path": relative,
+                    "grant_type": grant_type,
+                    "origin": origin,
+                    "source_project": str(source_root),
+                }
+            )
+
+        return result
 
     def ai_accessible_files(self) -> list[Path]:
         """Return all existing files currently permitted for AI context access."""
@@ -134,23 +243,19 @@ class WorkspaceManager:
         result: list[Path] = []
         seen: set[Path] = set()
 
-        rows = self.database.fetchall(
-            "SELECT relative_path, grant_type FROM ai_access_grants "
-            "WHERE project_path=? ORDER BY created_at",
-            (str(root),),
-        )
-
         targets: list[tuple[Path, str]] = []
 
-        for row in rows:
+        for row in self.effective_ai_grants():
             target = self.filesystem.resolve(root / row["relative_path"])
             if target != root and root not in target.parents:
                 continue
             targets.append((target, row["grant_type"]))
 
-        for target in sorted(self._session_grants, key=lambda value: value.as_posix().casefold()):
+        for target, grant_type in sorted(
+            self._session_grants.items(),
+            key=lambda item: item[0].as_posix().casefold(),
+        ):
             if target == root or root in target.parents:
-                grant_type = "directory" if self.filesystem.is_directory(target) else "file"
                 targets.append((target, grant_type))
 
         for target, grant_type in targets:
@@ -217,6 +322,54 @@ class WorkspaceManager:
             "SELECT absolute_path, grant_type, created_at "
             "FROM ai_external_access_grants ORDER BY created_at, absolute_path"
         )
+
+    def read_grants(self) -> list[dict[str, str]]:
+        """Return user-manageable persistent read grants from both scopes."""
+        result: list[dict[str, str]] = []
+        if self.active_project:
+            for row in self.ai_grants():
+                target = self.filesystem.resolve(
+                    self.active_project / row["relative_path"]
+                )
+                result.append(
+                    {
+                        "scope": "project",
+                        "path": str(target),
+                        "grant_type": row["grant_type"],
+                    }
+                )
+        for row in self.external_ai_grants():
+            result.append(
+                {
+                    "scope": "external",
+                    "path": row["absolute_path"],
+                    "grant_type": row["grant_type"],
+                }
+            )
+        return result
+
+    def revoke_read_access(self, path: str | Path, *, scope: str | None = None) -> None:
+        """Revoke a persistent read grant without conflating read and write modes."""
+        target = self.filesystem.resolve(path)
+        if scope == "project":
+            self.revoke_ai_access(target)
+            return
+        if scope == "external":
+            self.revoke_external_ai_access(target)
+            return
+
+        if self.active_project and (
+            target == self.active_project or self.active_project in target.parents
+        ):
+            relative = target.relative_to(self.active_project).as_posix()
+            direct = self.database.fetchone(
+                "SELECT 1 FROM ai_access_grants WHERE project_path=? AND relative_path=?",
+                (str(self.active_project), relative),
+            )
+            if direct:
+                self.revoke_ai_access(target)
+                return
+        self.revoke_external_ai_access(target)
 
     def set_global_read_access(self, enabled: bool) -> None:
         """Allow concrete local read requests without per-path approval.
@@ -297,40 +450,20 @@ class WorkspaceManager:
         return result
 
     def grant_session_access(self, path: str | Path) -> None:
-        """Grant temporary access for this session only (until project closes)."""
+        """Grant a typed, temporary project permission until the project closes.
+
+        Existing directories grant their children. Files and non-existent change
+        targets are exact-file grants and therefore cannot accidentally authorize
+        synthetic descendants such as ``file.txt/child``.
+        """
         if not self.active_project:
             return
         target = self.filesystem.resolve(path)
         if target != self.active_project and self.active_project not in target.parents:
             return
-        self._session_grants.add(target)
-        self.logger.debug("Granted temporary session access to %s", target)
-
-    def _inherit_parent_ai_grants(self, project: Path) -> None:
-        """Reuse explicit parent-project grants when that project is opened as a workspace."""
-        rows = self.database.fetchall(
-            "SELECT project_path, relative_path, grant_type FROM ai_access_grants WHERE project_path != ?",
-            (str(project),),
-        )
-        for row in rows:
-            source_root = self.filesystem.resolve(row["project_path"])
-            target = self.filesystem.resolve(source_root / row["relative_path"])
-            if row["grant_type"] == "file" and project in target.parents:
-                relative = target.relative_to(project).as_posix()
-                grant_type = "file"
-            elif row["grant_type"] == "directory" and (target == project or target in project.parents):
-                relative = "."
-                grant_type = "directory"
-            elif row["grant_type"] == "directory" and project in target.parents:
-                relative = target.relative_to(project).as_posix()
-                grant_type = "directory"
-            else:
-                continue
-            self.database.execute(
-                "INSERT INTO ai_access_grants(project_path,relative_path,grant_type) VALUES(?,?,?) "
-                "ON CONFLICT(project_path,relative_path) DO UPDATE SET grant_type=excluded.grant_type",
-                (str(project), relative, grant_type),
-            )
+        grant_type = "directory" if self.filesystem.is_directory(target) else "file"
+        self._session_grants[target] = grant_type
+        self.logger.debug("Granted temporary %s session access to %s", grant_type, target)
 
     def is_ai_path_granted(self, path: str | Path) -> bool:
         """Check a file or a path inside a granted directory is available to the AI.
@@ -349,19 +482,20 @@ class WorkspaceManager:
         if target != self.active_project and self.active_project not in target.parents:
             return False
         
-        # Check session grants first (temporary)
-        if target in self._session_grants:
-            return True
-        # Also check if target is within a session-granted directory
-        for session_grant in self._session_grants:
-            if target == session_grant or session_grant in target.parents:
+        # Check typed session grants first (temporary).
+        for session_grant, grant_type in self._session_grants.items():
+            if grant_type == "file" and target == session_grant:
+                return True
+            if grant_type == "directory" and (
+                target == session_grant or session_grant in target.parents
+            ):
                 return True
         
         # Get relative path for grant checking
         relative = target.relative_to(self.active_project).as_posix()
         
         # Check persistent grants
-        for grant in self.ai_grants():
+        for grant in self.effective_ai_grants():
             granted = grant["relative_path"]
             grant_type = grant["grant_type"]
             
@@ -389,7 +523,7 @@ class WorkspaceManager:
             parent_parts = Path(relative).parts[:-1]
             if parent_parts:
                 parent_relative = "/".join(parent_parts)
-                for grant in self.ai_grants():
+                for grant in self.effective_ai_grants():
                     granted = grant["relative_path"]
                     grant_type = grant["grant_type"]
                     
@@ -402,7 +536,7 @@ class WorkspaceManager:
                             return True
             else:
                 # File in root - root must be granted as directory
-                for grant in self.ai_grants():
+                for grant in self.effective_ai_grants():
                     if grant["grant_type"] == "directory" and grant["relative_path"] == ".":
                         return True
         

@@ -43,6 +43,63 @@ _EXPLICIT_SAVE = re.compile(
 )
 
 
+_TOOL_EXECUTION_COMMAND = re.compile(
+    r"^\s*(?:bitte\s+)?(?:prüfe|pruefe|überprüfe|ueberpruefe|"
+    r"teste|test|kompiliere|compile|starte)\b",
+    re.IGNORECASE,
+)
+
+_TOOL_EXECUTION_TARGET = re.compile(
+    r"\b(?:syntax\w*|python[-\s]?interpreter|"
+    r"interpreter|pytest|python\s+(?:compile|compiler)|kompilier\w*)\b",
+    re.IGNORECASE,
+)
+
+_TOOL_EXECUTION_PHRASE = re.compile(
+    r"\b(?:pytest|tests?|python)\b[\s\S]{0,80}?"
+    r"\b(?:ausführen|ausfuehren|starten|laufen\s+lassen|run|execute|kompilieren)\b"
+    r"|\b(?:führe|fuehre|starte|run|execute)\b[\s\S]{0,80}?"
+    r"\b(?:pytest|tests?|python|compiler|interpreter)\b",
+    re.IGNORECASE,
+)
+
+_PROJECT_TOOL_TARGET = re.compile(
+    r"\b(?:projekt|syntax\w*|pytest|tests?|kompilier\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def is_tool_execution_request(request: str) -> bool:
+    """Return True for explicit requests to execute a deterministic local tool.
+
+    Analysis words such as ``prüfe`` are ambiguous in normal language.  Forge
+    therefore routes them into the Agent/plugin workflow only when the request
+    also names an executable target such as Python syntax, pytest, compilation
+    or the interpreter.  Pure explanation/architecture requests remain chat
+    analysis.
+    """
+    normalized = request.strip()
+    if not normalized:
+        return False
+    if _TOOL_EXECUTION_PHRASE.search(normalized):
+        return True
+    return bool(
+        _TOOL_EXECUTION_COMMAND.search(normalized)
+        and _TOOL_EXECUTION_TARGET.search(normalized)
+    )
+
+
+def tool_execution_requires_project(request: str) -> bool:
+    """Return whether the current deterministic tool workflow needs a project.
+
+    The current Python verification profile includes project-source compilation,
+    so every executable Python tool action is project-bound for now. A future
+    action-specific verification profile may safely re-enable projectless
+    interpreter inspection.
+    """
+    return is_tool_execution_request(request)
+
+
 def is_project_change_request(request: str) -> bool:
     """Return True only for a likely request to modify project files.
 
@@ -110,8 +167,24 @@ _QUOTED_WINDOWS_PATH = re.compile(
     re.IGNORECASE,
 )
 
-_BARE_WINDOWS_PATH = re.compile(
-    r"(?<![A-Za-z0-9_])([A-Za-z]:[\\/][^\s,;]+)",
+_BARE_WINDOWS_FILE_PATH = re.compile(
+    r'(?<![A-Za-z0-9_])('
+    r'[A-Za-z]:[\\/]'
+    r'(?:[^<>:"|?*\r\n,;\\/]+[\\/])*'
+    r'[^<>:"|?*\r\n,;\\/]*?\.[A-Za-z0-9_-]{1,16}'
+    r')(?=$|\s|[.,;!?)}\]])',
+    re.IGNORECASE,
+)
+
+_BARE_WINDOWS_PATH_START = re.compile(
+    r"(?<![A-Za-z0-9_])([A-Za-z]:[\\/])",
+    re.IGNORECASE,
+)
+
+_PATH_CLAUSE_BOUNDARY = re.compile(
+    r"\s+(?=(?:und|oder|bitte|lies|lese|analysiere|analysier|"
+    r"untersuche|prüfe|pruefe|überprüfe|ueberpruefe|zeige|erkläre|"
+    r"erklaere|öffne|oeffne)\b)",
     re.IGNORECASE,
 )
 
@@ -127,21 +200,42 @@ def is_local_read_request(request: str) -> bool:
     return bool(
         _LOCAL_READ_REQUEST.search(normalized)
         or _QUOTED_WINDOWS_PATH.search(normalized)
-        or _BARE_WINDOWS_PATH.search(normalized)
+        or _BARE_WINDOWS_PATH_START.search(normalized)
     )
 
 
 def extract_local_paths(request: str) -> list[str]:
-    """Extract explicit absolute Windows paths without touching the filesystem."""
+    """Extract explicit absolute Windows paths without touching the filesystem.
+
+    Quoted paths remain the least ambiguous form. Bare file paths may contain
+    spaces and are captured through their filename extension. Bare directory
+    paths may also contain spaces; common instruction/conjunction words end the
+    path instead of the first whitespace character.
+    """
     matches: list[tuple[int, str]] = []
-    quoted_spans: list[tuple[int, int]] = []
+    occupied_spans: list[tuple[int, int]] = []
+
     for match in _QUOTED_WINDOWS_PATH.finditer(request):
-        quoted_spans.append(match.span())
+        occupied_spans.append(match.span())
         matches.append((match.start(), match.group(1)))
-    for match in _BARE_WINDOWS_PATH.finditer(request):
-        if any(start <= match.start() < end for start, end in quoted_spans):
+
+    for match in _BARE_WINDOWS_FILE_PATH.finditer(request):
+        if any(span_start <= match.start() < span_end for span_start, span_end in occupied_spans):
             continue
+        occupied_spans.append(match.span())
         matches.append((match.start(), match.group(1)))
+
+    for match in _BARE_WINDOWS_PATH_START.finditer(request):
+        if any(span_start <= match.start() < span_end for span_start, span_end in occupied_spans):
+            continue
+        path_start = match.start(1)
+        tail = request[path_start:]
+        tail = re.split(r"[\r\n,;]", tail, maxsplit=1)[0]
+        tail = _PATH_CLAUSE_BOUNDARY.split(tail, maxsplit=1)[0]
+        value = tail.strip().rstrip(".,;:!?)']}")
+        if value:
+            matches.append((path_start, value))
+
     paths: list[str] = []
     for _, raw in sorted(matches, key=lambda item: item[0]):
         value = raw.strip().rstrip(".,;:!?)']}")

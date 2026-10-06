@@ -309,3 +309,89 @@ def test_ai_accessible_files_includes_session_grants_and_deduplicates(
     assert target in accessible
     assert accessible.count(target) == 1
 
+
+
+def test_session_file_grant_does_not_authorize_descendants(
+    active_manager: WorkspaceManager,
+    project: Path,
+):
+    target = project / "session.txt"
+    target.write_text("session", encoding="utf-8")
+
+    active_manager.grant_session_access(target)
+
+    assert active_manager.is_ai_path_granted(target)
+    assert not active_manager.is_ai_path_granted(target / "child.txt")
+
+
+def test_opening_another_project_clears_session_grants(
+    manager: WorkspaceManager,
+    tmp_path: Path,
+):
+    parent = tmp_path / "parent"
+    child = parent / "child"
+    child.mkdir(parents=True)
+    parent_file = parent / "session.txt"
+    parent_file.write_text("parent", encoding="utf-8")
+
+    manager.open_project(parent)
+    manager.grant_session_access(parent)
+    assert manager.is_ai_path_granted(parent_file)
+
+    manager.open_project(child)
+
+    assert manager._session_grants == {}
+    assert not manager.is_ai_path_granted(child / "future.txt")
+
+
+def test_parent_grants_are_inherited_dynamically_not_copied(
+    manager: WorkspaceManager,
+    tmp_path: Path,
+):
+    parent = tmp_path / "parent"
+    child = parent / "child"
+    child.mkdir(parents=True)
+    target = child / "main.py"
+    target.write_text("print('child')", encoding="utf-8")
+
+    manager.open_project(parent)
+    manager.grant_ai_access(parent)
+
+    manager.open_project(child)
+
+    assert manager.ai_grants() == []
+    assert any(
+        grant["origin"] == "inherited" and grant["relative_path"] == "."
+        for grant in manager.effective_ai_grants()
+    )
+    assert manager.is_ai_path_granted(target)
+    assert target.resolve() in manager.ai_accessible_files()
+
+    manager.open_project(parent)
+    manager.revoke_ai_access(parent)
+    manager.open_project(child)
+
+    assert not manager.is_ai_path_granted(target)
+    assert manager.ai_grants() == []
+
+
+def test_revoking_parent_grant_purges_legacy_child_copy(
+    manager: WorkspaceManager,
+    tmp_path: Path,
+):
+    parent = tmp_path / "parent"
+    child = parent / "child"
+    child.mkdir(parents=True)
+
+    manager.open_project(parent)
+    manager.grant_ai_access(parent)
+    manager.database.upsert_project(str(child.resolve()), child.name)
+    manager.database.execute(
+        "INSERT INTO ai_access_grants(project_path,relative_path,grant_type) VALUES(?,?,?)",
+        (str(child.resolve()), ".", "directory"),
+    )
+
+    manager.revoke_ai_access(parent)
+    manager.open_project(child)
+
+    assert manager.ai_grants() == []

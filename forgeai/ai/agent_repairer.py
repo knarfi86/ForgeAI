@@ -6,7 +6,7 @@ from typing import Any
 from .agent_analyzer import RepairAnalysis
 from .agent_contracts import AgentPlan, AgentTask
 from .model_router import ModelRouter
-from .prompt_core import compose_system_prompt
+from .prompt_core import compose_routed_prompt
 from .prompt_roles import load_role_prompt
 from forgeai.core.recovery_escalation import RecoveryEscalationDecision
 
@@ -46,6 +46,46 @@ class AgentRepairer:
         response = self.model_router.generate(
             "repairer",
             prompt,
+            response_format={
+                "type": "object",
+                "properties": {
+                    "summary": {"type": "string"},
+                    "proposed_changes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "action": {
+                                    "type": "string",
+                                    "enum": [
+                                        "create", "create_directory", "replace",
+                                        "insert_before", "insert_after"
+                                    ],
+                                },
+                                "path": {"type": "string"},
+                                "description": {"type": "string"},
+                            },
+                            "required": ["action", "path", "description"],
+                        },
+                    },
+                    "plugin_actions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "plugin_id": {"type": "string"},
+                                "action": {"type": "string"},
+                                "parameters": {"type": "object"},
+                            },
+                            "required": ["plugin_id", "action", "parameters"],
+                        },
+                    },
+                    "rationale": {"type": "string"},
+                },
+                "required": [
+                    "summary", "proposed_changes", "plugin_actions", "rationale"
+                ],
+            },
         )
 
         return self._parse_response(response)
@@ -146,7 +186,14 @@ class AgentRepairer:
             ]
         )
 
-        return compose_system_prompt(role_prompt, repair_input)
+        user_input, separator, contract = repair_input.partition("\n## Repair Planning Contract\n")
+        if not separator:
+            raise RuntimeError("Repair Planning Contract fehlt im Repairer-Prompt.")
+        return compose_routed_prompt(
+            role_prompt,
+            "## Repair Planning Contract\n" + contract,
+            user_content=user_input,
+        )
 
     @classmethod
     def _parse_response(cls, response: str) -> AgentPlan:

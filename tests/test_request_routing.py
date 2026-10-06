@@ -6,7 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from forgeai.ai.request_routing import is_project_change_request
+from forgeai.ai.request_routing import (
+    is_project_change_request,
+    is_tool_execution_request,
+    tool_execution_requires_project,
+)
 
 
 @pytest.mark.parametrize("user_text", [
@@ -82,3 +86,60 @@ def test_actual_main_window_routing_and_schema_without_qt():
     assert window._action_response_format(text_request) is None
     assert window._is_change_request("Ändere main.py") is True
     assert window._action_response_format("Ändere main.py")["type"] == "object"
+
+@pytest.mark.parametrize("user_text", [
+    "Prüfe das aktuelle Projekt mit Python auf Syntaxfehler",
+    "Pruefe das aktuelle Projekt mit Python auf Syntaxfehler",
+    "Prüfe nur forgeai/ai mit Python auf Syntaxfehle",
+    "Führe pytest aus",
+    "pytest ausführen",
+    "Kompiliere die Python-Quellen",
+])
+def test_explicit_tool_requests_reach_agent_execution(user_text):
+    assert is_tool_execution_request(user_text) is True
+
+
+@pytest.mark.parametrize("user_text", [
+    "Analysiere die Architektur",
+    "Prüfe die Architektur",
+    "Erkläre pytest",
+    "Erkläre, wie ich Python auf Syntaxfehler prüfe",
+])
+def test_reasoning_requests_do_not_become_tool_execution(user_text):
+    assert is_tool_execution_request(user_text) is False
+
+
+def test_python_tool_execution_requires_project_with_current_verification_profile():
+    assert tool_execution_requires_project(
+        "Prüfe das aktuelle Projekt mit Python auf Syntaxfehler"
+    ) is True
+    assert tool_execution_requires_project("Führe pytest aus") is True
+    assert tool_execution_requires_project("Prüfe den Python-Interpreter") is True
+
+
+def test_main_window_analysis_classifier_defers_real_tool_execution_without_qt():
+    source = Path(__file__).resolve().parents[1] / "forgeai/ui/main_window.py"
+    module = ast.parse(source.read_text(encoding="utf-8"))
+    main_window = next(
+        node for node in module.body
+        if isinstance(node, ast.ClassDef) and node.name == "MainWindow"
+    )
+    method = next(
+        node for node in main_window.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_is_analysis_request"
+    )
+    harness = ast.Module(
+        body=[ast.ClassDef(
+            name="RoutingHarness", bases=[], keywords=[],
+            body=[method], decorator_list=[],
+        )],
+        type_ignores=[],
+    )
+    namespace = {"is_tool_execution_request": is_tool_execution_request}
+    exec(compile(ast.fix_missing_locations(harness), str(source), "exec"), namespace)
+    classifier = namespace["RoutingHarness"]._is_analysis_request
+
+    assert classifier("Prüfe die Architektur") is True
+    assert classifier("Analysiere das Projekt") is True
+    assert classifier("Prüfe das aktuelle Projekt mit Python auf Syntaxfehler") is False
+    assert classifier("Führe pytest aus") is False

@@ -494,6 +494,9 @@ class AgentOrchestrator:
         if "approved_plugin_ids" not in execution_metadata:
             approved = self.run.metadata.get("approved_plugin_ids", ())
             execution_metadata["approved_plugin_ids"] = tuple(approved)
+        if "approved_plugin_actions" not in execution_metadata:
+            approved_actions = self.run.metadata.get("approved_plugin_actions", ())
+            execution_metadata["approved_plugin_actions"] = tuple(approved_actions)
 
         gate = self.preflight_capability_execution(
             plugin_manager,
@@ -513,7 +516,12 @@ class AgentOrchestrator:
             project_path=project_path or capability_plan.project_path,
             metadata=execution_metadata,
         )
-        results = plugin_manager.execute_serial(capability_plan, context)
+        try:
+            results = plugin_manager.execute_serial(capability_plan, context)
+        finally:
+            # One-shot approval is consumed by the execution attempt itself.
+            self.run.metadata["approved_plugin_ids"] = ()
+            self.run.metadata["approved_plugin_actions"] = ()
         history = self.run.metadata.setdefault("capability_execution_history", [])
         if isinstance(history, list):
             history.append(

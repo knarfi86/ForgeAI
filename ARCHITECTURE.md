@@ -96,13 +96,15 @@ Die dauerhafte ForgeBrain-Analyse enthält Dateien, Ordner, Module, Klassen, Imp
 
 ## KI-Freigaben
 
-`ai_access_grants` speichert pro Projekt explizit freigegebene Dateien und Ordner.
+`ai_access_grants` speichert pro Projekt explizit freigegebene Dateien und Ordner. Freigaben eines übergeordneten Projekts werden für verschachtelte Projekte zur Laufzeit ausgewertet und nicht mehr als neue Child-Freigaben kopiert. Ein Widerruf am Ursprung wirkt dadurch sofort.
 
-`ProjectPanel` ermöglicht Freigabe und Widerruf direkt aus dem Dateibaum; eine Dialogbestätigung ist erforderlich.
+`ProjectPanel` ermöglicht Freigabe und Widerruf direkt aus dem Dateibaum; eine Dialogbestätigung ist erforderlich. `Werkzeuge -> KI-Lesefreigaben` verwendet dieselbe Scope-Logik: Pfade im aktiven Projekt landen in `ai_access_grants`, externe Pfade in `ai_external_access_grants`.
 
-`WorkspaceManager` unterstützt zusätzlich temporäre Session-Freigaben. Diese gelten nur für die aktuelle Projektsitzung und werden beim Schließen des Projekts entfernt.
+`WorkspaceManager` unterstützt zusätzlich typisierte temporäre Session-Freigaben. Dateifreigaben gelten exakt für die Datei, Ordnerfreigaben rekursiv. Session-Freigaben werden sowohl beim Schließen als auch beim Wechsel des Projekts entfernt.
 
-`AIContextProvider` löst die Freigaben auf, liest ausschließlich zugelassene lokale Dateien und begrenzt den übertragenen Kontext.
+Eine Lesefreigabe ändert den `ProjectMode` nicht. Insbesondere wird `READ_ONLY` nicht automatisch zu `WRITE_WITH_CONFIRMATION` hochgestuft.
+
+`AIContextProvider` löst die wirksamen Projektfreigaben auf, liest ausschließlich zugelassene lokale Dateien und begrenzt den übertragenen Kontext.
 
 ## KI-Kontext
 
@@ -427,56 +429,44 @@ Die erste technische Implementierung befindet sich in
 
 #### Aktuell betroffene Dateien
 
-- `docs/CAPABILITY_PLUGINS.md`
-- `docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
-- `docs/PYTHON_PLUGIN.md`
+- `docs/PROJECTLESS_CHAT_ACCESS.md`
 - `forgeai/ai/agent_analyzer.py`
-- `forgeai/ai/agent_contracts.py`
 - `forgeai/ai/agent_orchestrator.py`
 - `forgeai/ai/agent_planner.py`
 - `forgeai/ai/agent_repairer.py`
 - `forgeai/ai/agent_reviewer.py`
 - `forgeai/ai/agent_ui_worker.py`
-- `forgeai/ai/prompts/roles/plan_reviewer.md`
+- `forgeai/ai/model_router.py`
+- `forgeai/ai/ollama_client.py`
+- `forgeai/ai/prompt_core.py`
 - `forgeai/ai/prompts/roles/project_planner.md`
-- `forgeai/ai/prompts/roles/repair_planner.md`
+- `forgeai/ai/request_routing.py`
 - `forgeai/core/capability_execution_gate.py`
-- `forgeai/core/capability_registry.py`
-- `forgeai/core/plugin_manager.py`
+- `forgeai/core/workspace_manager.py`
 - `forgeai/plugins/python_plugin.py`
-- `forgeai/ui/capabilities_dialog.py`
+- `forgeai/ui/access_grants_dialog.py`
 - `forgeai/ui/main_window.py`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/ARCHITECTURE.md`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/ROADMAP.md`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/docs/CAPABILITY_PLUGINS.md`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/docs/CURRENT_STATE.md`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/docs/PLUGIN_CAPABILITY_FRAMEWORK.md`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/docs/PYTHON_PLUGIN.md`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_analyzer.py`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_contracts.py`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_orchestrator.py`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_planner.py`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_repairer.py`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_reviewer.py`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/agent_ui_worker.py`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/prompts/roles/plan_reviewer.md`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/prompts/roles/project_planner.md`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ai/prompts/roles/repair_planner.md`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/core/capability_execution_gate.py`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/core/capability_registry.py`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/core/plugin_manager.py`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/plugins/python_plugin.py`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ui/capabilities_dialog.py`
-- `.rossa_install_backups/plugin_actions_v1_0_20261006-144524/forgeai/ui/main_window.py`
+- `scripts/update_docs.py`
+- `tests/test_agent_recovery_ui.py`
+- `tests/test_ollama_client.py`
 - `tests/test_plugin_actions.py`
+- `tests/test_projectless_chat_access.py`
+- `tests/test_prompt_creation.py`
+- `tests/test_python_plugin.py`
+- `tests/test_request_routing.py`
+- `tests/test_update_docs.py`
+- `tests/test_workspace_manager.py`
+- `tests/test_agent_prompt_transport.py`
+- `tests/test_hardening_v13.py`
+- `tests/test_hardening_v14.py`
 
 #### Letzte relevante Commits
 
-- `893ea4d (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: add capability execution gate`
+- `f22c502 (HEAD -> temp/agent-workflow-current, origin/temp/agent-workflow-current) feat: add structured plugin actions execution`
+- `893ea4d feat: add capability execution gate`
 - `f78041f feat: integrate capability context into agent planning`
 - `1c1b1b8 feat: establish ROSSA agent and capability foundation`
 - `fa174bd feat: add recovery context refresh and failure fingerprints`
-- `90b645c fix: improve request routing and reviewer handling`
 
 Diese Übersicht dokumentiert nur den aktuell sichtbaren Entwicklungsstand.
 Architekturentscheidungen und Begründungen bleiben in den manuell

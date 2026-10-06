@@ -78,6 +78,7 @@ def test_update_docs_updates_auto_blocks_and_is_idempotent():
     # im Auto-Block erscheinen.
     assert "- `ARCHITECTURE.md`" not in current_state_block
     assert "- `docs/CURRENT_STATE.md`" not in current_state_block
+    assert ".rossa_install_backups/" not in current_state_block
     assert "#### Teststand" in current_state_block
     assert "#### Agentenstatus" in current_state_block
     assert "AgentRun`: **implementiert**" in current_state_block

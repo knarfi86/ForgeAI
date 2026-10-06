@@ -6,7 +6,7 @@ from forgeai.core.capability_registry import CapabilityRegistry
 from forgeai.core.completion_gate import CompletionEvidenceCategory
 from forgeai.core.fact_evidence_provider import FactContext, FactQuery, FactRegistry, FactService, FactStatus
 from forgeai.core.plugin_manager import CapabilityExecutionContext, PluginManager
-from forgeai.core.verification_framework import VerificationContext, VerificationRegistry, VerificationStatus
+from forgeai.core.verification_framework import VerificationCheck, VerificationContext, VerificationRegistry, VerificationStatus
 from forgeai.plugins.python_plugin import (
     FACT_PROVIDER_ID,
     PLUGIN_ID,
@@ -32,6 +32,8 @@ def test_python_plugin_registers_manifest_fact_provider_profile_and_executor():
     assert manifest.name == "Python Development"
     assert "code.python.modify" in manifest.capabilities
     assert manifest.verification_profiles == (VERIFICATION_PROFILE_ID,)
+    compile_action = manifest.action_spec("compile")
+    assert compile_action.parameter_keys == ("path",)
     assert manager.fact_service is not None
     assert FACT_PROVIDER_ID in manager.fact_service.registry.list_provider_ids()
     assert manager.verification_registry is not None
@@ -161,3 +163,101 @@ def test_builtin_registration_includes_python_plugin():
     register_builtin_plugins(manager)
 
     assert manager.registry.get(PLUGIN_ID).name == "Python Development"
+
+
+def test_python_compile_action_can_be_scoped_to_project_subdirectory(tmp_path):
+    selected = tmp_path / "forgeai" / "ai"
+    selected.mkdir(parents=True)
+    (selected / "good.py").write_text("value = 1\n", encoding="utf-8")
+    outside = tmp_path / "outside.py"
+    outside.write_text("def broken(:\n    pass\n", encoding="utf-8")
+
+    manager = _manager()
+    register_python_plugin(manager)
+    manager.set_autonomous(PLUGIN_ID, True)
+    plan = manager.build_action_execution_plan(
+        "Prüfe nur forgeai/ai mit Python auf Syntaxfehler",
+        [{
+            "plugin_id": PLUGIN_ID,
+            "action": "compile",
+            "parameters": {"path": "forgeai/ai"},
+        }],
+        project_path=tmp_path,
+    )
+
+    result = manager.execute_serial(
+        plan,
+        CapabilityExecutionContext(
+            task_id="t",
+            execution_round=1,
+            project_path=str(tmp_path),
+        ),
+    )[0]
+
+    assert result.success is True
+    assert "1 Python-Datei(en) geprüft" in result.output
+    assert "Bereich: forgeai/ai" in result.output
+
+
+def test_python_compile_action_rejects_target_outside_project(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    outside = tmp_path / "outside.py"
+    outside.write_text("value = 1\n", encoding="utf-8")
+
+    manager = _manager()
+    register_python_plugin(manager)
+    manager.set_autonomous(PLUGIN_ID, True)
+    plan = manager.build_action_execution_plan(
+        "compile",
+        [{
+            "plugin_id": PLUGIN_ID,
+            "action": "compile",
+            "parameters": {"path": "../outside.py"},
+        }],
+        project_path=project,
+    )
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="außerhalb des aktuellen Projekts"):
+        manager.execute_serial(
+            plan,
+            CapabilityExecutionContext(
+                task_id="t",
+                execution_round=1,
+                project_path=str(project),
+            ),
+        )
+
+
+def test_python_verifier_honors_scoped_compile_metadata(tmp_path):
+    selected = tmp_path / "forgeai" / "ai"
+    selected.mkdir(parents=True)
+    (selected / "good.py").write_text("value = 1\n", encoding="utf-8")
+    (tmp_path / "bad.py").write_text("def broken(:\n    pass\n", encoding="utf-8")
+
+    plugin = PythonPlugin()
+    check = VerificationCheck(
+        check_id="python-compile",
+        provider_id="python.verifier",
+        category=CompletionEvidenceCategory.TECHNICAL,
+    )
+    context = VerificationContext(
+        task_id="t",
+        execution_round=1,
+        project_path=str(tmp_path),
+        metadata={
+            "plugin_actions": {
+                PLUGIN_ID: {
+                    "action": "compile",
+                    "parameters": {"path": "forgeai/ai"},
+                }
+            }
+        },
+    )
+
+    result = plugin.verify(context, check)
+
+    assert result.status == VerificationStatus.PASS
+    assert "Bereich: forgeai/ai" in str(result.observed_value)

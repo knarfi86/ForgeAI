@@ -12,6 +12,7 @@ from .model_policy import (
     ModelTarget,
     PrimaryModelPolicy,
 )
+from .prompt_core import split_routed_prompt
 
 
 MODEL_ROLES = (
@@ -173,9 +174,10 @@ class ModelRouter:
                 f"Der ModelAdapter {profile.adapter_id!r} ist nicht registriert."
             )
 
+        system_prompt, routed_prompt = split_routed_prompt(prompt)
         adapted_prompt = adapter.adapt_prompt(
             role=decision.role,
-            prompt=prompt,
+            prompt=routed_prompt,
             profile=profile,
         )
         adapted_options = adapter.adapt_options(
@@ -183,6 +185,9 @@ class ModelRouter:
             options=kwargs,
             profile=profile,
         )
+        if system_prompt is not None:
+            adapted_options = dict(adapted_options)
+            adapted_options["system_prompt"] = system_prompt
 
         try:
             return provider.generate(

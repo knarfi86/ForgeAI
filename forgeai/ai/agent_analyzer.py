@@ -7,7 +7,7 @@ from typing import Any
 from .agent_contracts import AgentPlan, AgentTask
 from .model_router import ModelRouter
 from .prompt_roles import load_role_prompt
-from .prompt_core import compose_system_prompt
+from .prompt_core import compose_routed_prompt
 from forgeai.core.recovery_escalation import RecoveryEscalationDecision
 
 
@@ -52,6 +52,20 @@ class AgentAnalyzer:
         response = self.model_router.generate(
             "advisor",
             prompt,
+            response_format={
+                "type": "object",
+                "properties": {
+                    "summary": {"type": "string"},
+                    "findings": {"type": "array", "items": {"type": "string"}},
+                    "root_cause": {"type": "string"},
+                    "repair_requirements": {
+                        "type": "array", "items": {"type": "string"}
+                    },
+                },
+                "required": [
+                    "summary", "findings", "root_cause", "repair_requirements"
+                ],
+            },
         )
 
         return self._parse_response(response)
@@ -119,7 +133,14 @@ class AgentAnalyzer:
             ]
         )
 
-        return compose_system_prompt(role_prompt, analysis_input)
+        user_input, separator, contract = analysis_input.partition("\n## Analysis Contract\n")
+        if not separator:
+            raise RuntimeError("Analysis Contract fehlt im Analyzer-Prompt.")
+        return compose_routed_prompt(
+            role_prompt,
+            "## Analysis Contract\n" + contract,
+            user_content=user_input,
+        )
 
     @staticmethod
     def _parse_response(response: str) -> RepairAnalysis:

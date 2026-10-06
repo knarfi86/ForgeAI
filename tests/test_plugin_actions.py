@@ -98,7 +98,12 @@ def test_manual_only_action_plan_requires_one_shot_approval_at_gate():
         CapabilityExecutionContext(
             task_id="t",
             execution_round=1,
-            metadata={"approved_plugin_ids": ("tool",)},
+            metadata={
+                "approved_plugin_ids": ("tool",),
+                "approved_plugin_actions": (
+                    {"plugin_id": "tool", "action": "run", "parameters": {"target": "x"}},
+                ),
+            },
         ),
     )
     assert ready.decision == CapabilityGateDecision.READY
@@ -159,6 +164,8 @@ def test_orchestrator_user_approval_unlocks_only_visible_plugin_action():
     assert results[0]["action"] == "run"
     assert results[0]["parameters"] == {"target": "x"}
     assert run.metadata["capability_execution_history"][-1]["actions"][0]["action"] == "run"
+    assert run.metadata["approved_plugin_ids"] == ()
+    assert run.metadata["approved_plugin_actions"] == ()
 
 
 def test_executor_failure_becomes_runtime_error():
